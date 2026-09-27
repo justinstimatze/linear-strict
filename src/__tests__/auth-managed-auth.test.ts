@@ -12,7 +12,9 @@ import { createStoredCredentialAuth } from '../auth/managed-auth.js';
 
 const NOW = 1_752_300_000_000;
 
-function seedCredentials(overrides: { [K in keyof StoredCredentials]?: StoredCredentials[K] | undefined } = {}): StoredCredentials {
+function seedCredentials(
+  overrides: { [K in keyof StoredCredentials]?: StoredCredentials[K] | undefined } = {},
+): StoredCredentials {
   const credentials: StoredCredentials = {
     clientId: 'client-id-1',
     clientSecret: 'client-secret-1',

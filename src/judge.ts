@@ -40,7 +40,10 @@ export function judgePrompt(request: SignOffRequest): string {
   for (let index = 0; index < count; index += 1) {
     const dropped = request.dropped[index];
     const added = request.added[index];
-    if (dropped !== undefined) changes.push(`Check today: ${dropped}\nBecomes: ${added ?? '(removed, nothing replaces it)'}`);
+    if (dropped !== undefined)
+      changes.push(
+        `Check today: ${dropped}\nBecomes: ${added ?? '(removed, nothing replaces it)'}`,
+      );
     else if (added !== undefined) changes.push(`New check: ${added}`);
   }
   return [
@@ -73,12 +76,19 @@ export function judgeSignOff(options: JudgeOptions) {
     try {
       const response = await post(url, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-api-key': options.apiKey, 'anthropic-version': '2023-06-01' },
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': options.apiKey,
+          'anthropic-version': '2023-06-01',
+        },
         body: JSON.stringify({
           model,
           // Thinking stays on for Opus 5.5 and counts against max_tokens.
           max_tokens: 16000,
-          output_config: { effort: 'medium', format: { type: 'json_schema', schema: VERDICT_SCHEMA } },
+          output_config: {
+            effort: 'medium',
+            format: { type: 'json_schema', schema: VERDICT_SCHEMA },
+          },
           system: [{ type: 'text', text: JUDGE_SYSTEM, cache_control: { type: 'ephemeral' } }],
           messages: [{ role: 'user', content: judgePrompt(request) }],
         }),
@@ -88,14 +98,25 @@ export function judgeSignOff(options: JudgeOptions) {
         stop_reason?: string;
         error?: { message?: string };
       };
-      if (!response.ok) throw new Error(`${String(response.status)} ${body.error?.message ?? response.statusText}`);
-      if (body.stop_reason === 'refusal') throw new Error('the model declined to judge this request');
+      if (!response.ok)
+        throw new Error(`${String(response.status)} ${body.error?.message ?? response.statusText}`);
+      if (body.stop_reason === 'refusal')
+        throw new Error('the model declined to judge this request');
       const text = body.content?.find((block) => block.type === 'text')?.text ?? '';
       const input = JSON.parse(text || '{}') as { approve?: unknown; reason?: unknown };
-      if (typeof input.approve !== 'boolean' || typeof input.reason !== 'string') throw new Error('the reply carried no verdict');
-      return { ...judged, outcome: input.approve ? 'approved' : 'declined', note: input.reason.trim() };
+      if (typeof input.approve !== 'boolean' || typeof input.reason !== 'string')
+        throw new Error('the reply carried no verdict');
+      return {
+        ...judged,
+        outcome: input.approve ? 'approved' : 'declined',
+        note: input.reason.trim(),
+      };
     } catch (error) {
-      return { ...judged, outcome: 'unanswered', returned: `judge error: ${error instanceof Error ? error.message : String(error)}` };
+      return {
+        ...judged,
+        outcome: 'unanswered',
+        returned: `judge error: ${error instanceof Error ? error.message : String(error)}`,
+      };
     }
   };
 }

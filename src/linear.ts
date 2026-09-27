@@ -61,7 +61,8 @@ export function authorizationHeader(token: string, kind?: 'apiKey' | 'oauth'): s
 export function linearGql(options: LinearGqlOptions): Gql {
   const doFetch = options.fetch ?? fetch;
   const now = options.now ?? Date.now;
-  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const sleep =
+    options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const headers = {
     'Content-Type': 'application/json',
     Authorization: authorizationHeader(options.token, options.kind),
@@ -75,19 +76,29 @@ export function linearGql(options: LinearGqlOptions): Gql {
       body: JSON.stringify({ query, variables }),
     });
     const body = (await response.json().catch(() => undefined)) as
-      | { data?: T; errors?: GraphQLError[] }
-      | undefined;
+      { data?: T; errors?: GraphQLError[] } | undefined;
     const errors = body?.errors ?? [];
     const limited =
       response.status === 429 ||
-      errors.some((error) => error.extensions?.code === 'RATELIMITED' || error.extensions?.type === 'Ratelimited');
+      errors.some(
+        (error) =>
+          error.extensions?.code === 'RATELIMITED' || error.extensions?.type === 'Ratelimited',
+      );
     if (limited) throw new RateLimited(resetAt(response.headers, now()));
     if (errors.length > 0) {
-      throw new Error(errors.map((error) => error.extensions?.userPresentableMessage ?? error.message ?? 'unknown error').join('; '));
+      throw new Error(
+        errors
+          .map(
+            (error) => error.extensions?.userPresentableMessage ?? error.message ?? 'unknown error',
+          )
+          .join('; '),
+      );
     }
     if (!response.ok) {
       const message = `Linear API returned HTTP ${String(response.status)}`;
-      throw GATEWAY_STATUSES.includes(response.status) ? new GatewayError(message) : new Error(message);
+      throw GATEWAY_STATUSES.includes(response.status)
+        ? new GatewayError(message)
+        : new Error(message);
     }
     if (body?.data === undefined) throw new Error('Linear API returned no data');
     return body.data;
@@ -101,7 +112,8 @@ export function linearGql(options: LinearGqlOptions): Gql {
       } catch (error) {
         // A mutation is never retried after a gateway error: the edge may have passed it on before
         // failing, and a second attempt could post the same comment twice.
-        const retryable = error instanceof RateLimited || (error instanceof GatewayError && isRead(query));
+        const retryable =
+          error instanceof RateLimited || (error instanceof GatewayError && isRead(query));
         if (!retryable || attempt === MAX_RETRIES) throw error;
         const delay =
           !(error instanceof RateLimited) || error.resetAt === undefined

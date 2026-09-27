@@ -50,7 +50,12 @@ describe('one server per client connection', () => {
 
   it('goes when its parent does', () => {
     const clock = { now: Date.now() };
-    const orphan = server(1, clock, () => 0, () => 1);
+    const orphan = server(
+      1,
+      clock,
+      () => 0,
+      () => 1,
+    );
     expect(orphan.check()).toMatch(/parent \(pid 100\) exited/);
     orphan.stop();
   });

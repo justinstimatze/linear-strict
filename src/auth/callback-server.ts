@@ -107,7 +107,9 @@ export function startOAuthCallbackServer(options: CallbackServerOptions): Promis
     const timeout = setTimeout(() => {
       void settle(() => {
         rejectCallback(
-          new Error(`Login timed out after ${Math.round(options.timeoutMs / 1000)}s waiting for the browser callback`),
+          new Error(
+            `Login timed out after ${Math.round(options.timeoutMs / 1000)}s waiting for the browser callback`,
+          ),
         );
       });
     }, options.timeoutMs);

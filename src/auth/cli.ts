@@ -82,12 +82,11 @@ async function runLogin(
   openBrowser: (url: string) => Promise<boolean>,
 ): Promise<number> {
   const clientId = parseFlag(args, '--client-id') ?? process.env['LINEAR_OAUTH_CLIENT_ID'];
-  const clientSecret = parseFlag(args, '--client-secret') ?? process.env['LINEAR_OAUTH_CLIENT_SECRET'];
+  const clientSecret =
+    parseFlag(args, '--client-secret') ?? process.env['LINEAR_OAUTH_CLIENT_SECRET'];
 
   if (!clientId) {
-    print(
-      'A Linear OAuth client ID is required. Pass --client-id or set LINEAR_OAUTH_CLIENT_ID.',
-    );
+    print('A Linear OAuth client ID is required. Pass --client-id or set LINEAR_OAUTH_CLIENT_ID.');
     print(
       `Create an OAuth application at https://linear.app/settings/api/applications/new with redirect URI http://localhost:${DEFAULT_REDIRECT_PORT}${CALLBACK_PATH}.`,
     );
@@ -102,9 +101,7 @@ async function runLogin(
   }
 
   const scopesFlag = parseFlag(args, '--scopes');
-  const requestedScopes = scopesFlag
-    ? scopesFlag.split(/[\s,]+/).filter(Boolean)
-    : DEFAULT_SCOPES;
+  const requestedScopes = scopesFlag ? scopesFlag.split(/[\s,]+/).filter(Boolean) : DEFAULT_SCOPES;
   // Linear always expects the read scope.
   const scopes = Array.from(new Set(['read', ...requestedScopes.filter((s) => s !== 'read')]));
 
@@ -121,7 +118,9 @@ async function runLogin(
   } catch (error) {
     const reason = error instanceof Error ? error.message : 'unknown error';
     print(`Could not start the local callback server on port ${port} (${reason}).`);
-    print('Pass --redirect-port to use a different port (it must match a registered redirect URI).');
+    print(
+      'Pass --redirect-port to use a different port (it must match a registered redirect URI).',
+    );
     return 1;
   }
 
@@ -201,7 +200,9 @@ function runStatus(print: (message: string) => void): number {
   print(`  Access token: ${maskToken(credentials.accessToken)}`);
   if (typeof credentials.expiresAt === 'number') {
     const expired = credentials.expiresAt <= Date.now();
-    print(`  Expires: ${new Date(credentials.expiresAt).toISOString()} (${expired ? 'expired' : 'valid'})`);
+    print(
+      `  Expires: ${new Date(credentials.expiresAt).toISOString()} (${expired ? 'expired' : 'valid'})`,
+    );
   } else {
     print('  Expires: unknown');
   }
@@ -223,7 +224,9 @@ async function runLogout(print: (message: string) => void): Promise<number> {
     tokenTypeHint: 'access_token',
   });
   if (!revoked) {
-    print('The access token could not be revoked (offline or already invalid); removing local credentials anyway.');
+    print(
+      'The access token could not be revoked (offline or already invalid); removing local credentials anyway.',
+    );
   }
 
   deleteStoredCredentials();

@@ -29,7 +29,11 @@ export interface PullRequest {
   linkKind: string | null;
 }
 
-function field<T>(metadata: Record<string, unknown>, key: string, guard: (value: unknown) => value is T): T | null {
+function field<T>(
+  metadata: Record<string, unknown>,
+  key: string,
+  guard: (value: unknown) => value is T,
+): T | null {
   const value = metadata[key];
   return guard(value) ? value : null;
 }
@@ -191,7 +195,9 @@ function prFindings(
     ];
   }
   if (state.type === 'completed' && !merged.some((pr) => pr.targetBranch === mainBranch)) {
-    const targets = [...new Set(merged.map((pr) => pr.targetBranch ?? 'unknown branch'))].join(', ');
+    const targets = [...new Set(merged.map((pr) => pr.targetBranch ?? 'unknown branch'))].join(
+      ', ',
+    );
     return [
       {
         code: 'not_on_main',
@@ -219,12 +225,15 @@ export function commentAuthorKind(comment: {
 }): { kind: AuthorKind; basis: string } {
   if (comment.user?.app) return { kind: 'agent', basis: 'posted by an agent (app) identity' };
   if (comment.botActor) return { kind: 'agent', basis: 'posted by an integration' };
-  if (comment.body.trimStart().startsWith('🤖')) return { kind: 'agent', basis: 'body opens with 🤖' };
-  if (comment.externalUser) return { kind: 'person', basis: 'external user (e.g. via Slack or a support integration)' };
+  if (comment.body.trimStart().startsWith('🤖'))
+    return { kind: 'agent', basis: 'body opens with 🤖' };
+  if (comment.externalUser)
+    return { kind: 'person', basis: 'external user (e.g. via Slack or a support integration)' };
   if (comment.user) {
     return {
       kind: 'person',
-      basis: 'person account with no agent marker; an agent using that person\'s API key through another client looks the same',
+      basis:
+        "person account with no agent marker; an agent using that person's API key through another client looks the same",
     };
   }
   return { kind: 'unknown', basis: 'Linear returned no author' };

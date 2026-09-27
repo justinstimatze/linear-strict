@@ -4,7 +4,11 @@ import { type FakeState, fakeGql, fakeState } from './strict-fake-linear.helper.
 
 function setup(overrides: Partial<FakeState> = {}) {
   const state = fakeState(overrides);
-  const strict = new StrictLinear({ gql: fakeGql(state), claims: memoryClaimStore(), now: () => new Date('2026-09-24T12:00:00Z') });
+  const strict = new StrictLinear({
+    gql: fakeGql(state),
+    claims: memoryClaimStore(),
+    now: () => new Date('2026-09-24T12:00:00Z'),
+  });
   return { state, strict };
 }
 
@@ -48,17 +52,27 @@ describe('set_fields', () => {
   it('clears fields with null', async () => {
     const { state, strict } = setup();
     await strict.setFields('ENG-1', { cycle: null, due_date: null, project: null, estimate: null });
-    expect(state.updates).toEqual([{ cycleId: null, dueDate: null, projectId: null, estimate: null }]);
+    expect(state.updates).toEqual([
+      { cycleId: null, dueDate: null, projectId: null, estimate: null },
+    ]);
   });
 
   it('refuses the whole call, writing nothing, when any name does not resolve', async () => {
     const { state, strict } = setup();
-    await expect(strict.setFields('ENG-1', { priority: 1, add_labels: ['bogus'] })).rejects.toThrow(/No label "bogus".*not created here/);
-    await expect(strict.setFields('ENG-1', { add_labels: ['Area'] })).rejects.toThrow(/label group/);
+    await expect(strict.setFields('ENG-1', { priority: 1, add_labels: ['bogus'] })).rejects.toThrow(
+      /No label "bogus".*not created here/,
+    );
+    await expect(strict.setFields('ENG-1', { add_labels: ['Area'] })).rejects.toThrow(
+      /label group/,
+    );
     await expect(strict.setFields('ENG-1', { cycle: 99 })).rejects.toThrow(/no cycle 99/);
-    await expect(strict.setFields('ENG-1', { project: 'Nope' })).rejects.toThrow(/No project "Nope"/);
+    await expect(strict.setFields('ENG-1', { project: 'Nope' })).rejects.toThrow(
+      /No project "Nope"/,
+    );
     await expect(strict.setFields('ENG-1', { milestone: 'Beta' })).rejects.toThrow(/in no project/);
-    await expect(strict.setFields('ENG-1', { due_date: '1 October' })).rejects.toThrow(/YYYY-MM-DD/);
+    await expect(strict.setFields('ENG-1', { due_date: '1 October' })).rejects.toThrow(
+      /YYYY-MM-DD/,
+    );
     await expect(strict.setFields('ENG-1', { priority: 7 })).rejects.toThrow(/priority must be/);
     expect(state.updates).toEqual([]);
   });
@@ -70,10 +84,14 @@ describe('set_fields', () => {
 
   it('assigns by email or "me", and takes a person\'s ticket only with take_over', async () => {
     const { state, strict } = setup();
-    await expect(strict.setFields('ENG-1', { assignee: 'GRACE@example.com' })).resolves.toMatchObject({ changed: ['assignee (Grace)'] });
+    await expect(
+      strict.setFields('ENG-1', { assignee: 'GRACE@example.com' }),
+    ).resolves.toMatchObject({ changed: ['assignee (Grace)'] });
     expect(state.issue.assignee?.id).toBe('u-grace');
 
-    await expect(strict.setFields('ENG-1', { assignee: 'Ada' })).rejects.toThrow(/assigned to Grace.*take_over/);
+    await expect(strict.setFields('ENG-1', { assignee: 'Ada' })).rejects.toThrow(
+      /assigned to Grace.*take_over/,
+    );
     await expect(strict.setFields('ENG-1', { assignee: null })).rejects.toThrow(/take_over/);
     await strict.setFields('ENG-1', { assignee: 'me', take_over: true });
     expect(state.issue.assignee?.id).toBe('u-agent');
@@ -83,11 +101,15 @@ describe('set_fields', () => {
     const agent = { id: 'u-agent-b', name: 'agent-b', displayName: 'agent-b', app: true };
     const assigned = setup();
     assigned.state.issue.assignee = agent;
-    await expect(assigned.strict.setFields('ENG-1', { assignee: 'me', take_over: true })).rejects.toThrow(/another agent/);
+    await expect(
+      assigned.strict.setFields('ENG-1', { assignee: 'me', take_over: true }),
+    ).rejects.toThrow(/another agent/);
 
     const delegated = setup();
     delegated.state.issue.delegate = agent;
-    await expect(delegated.strict.setFields('ENG-1', { delegate: 'me' })).rejects.toThrow(/delegated to agent-b/);
+    await expect(delegated.strict.setFields('ENG-1', { delegate: 'me' })).rejects.toThrow(
+      /delegated to agent-b/,
+    );
   });
 
   it('adds relations in the direction Linear reads them', async () => {
@@ -98,13 +120,21 @@ describe('set_fields', () => {
         { id: 'issue-4', identifier: 'ENG-4' },
       ],
     });
-    const result = await strict.setFields('ENG-1', { related_to: ['ENG-2'], blocks: ['ENG-3'], blocked_by: ['ENG-4'] });
+    const result = await strict.setFields('ENG-1', {
+      related_to: ['ENG-2'],
+      blocks: ['ENG-3'],
+      blocked_by: ['ENG-4'],
+    });
     expect(state.relations).toEqual([
       { issueId: 'issue-1', relatedIssueId: 'issue-2', type: 'related' },
       { issueId: 'issue-1', relatedIssueId: 'issue-3', type: 'blocks' },
       { issueId: 'issue-4', relatedIssueId: 'issue-1', type: 'blocks' },
     ]);
-    expect(result.relations_added).toEqual(['related to ENG-2', 'blocks ENG-3', 'blocked by ENG-4']);
+    expect(result.relations_added).toEqual([
+      'related to ENG-2',
+      'blocks ENG-3',
+      'blocked by ENG-4',
+    ]);
     expect(state.updates).toEqual([]);
   });
 });

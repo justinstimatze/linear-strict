@@ -16,7 +16,10 @@ export function resolveJudgeKey(file = judgeKeyPath()): { key: string; source: s
   if (fromEnv) return { key: fromEnv, source: 'ANTHROPIC_API_KEY' };
   try {
     const mode = statSync(file).mode & 0o077;
-    if (mode !== 0) throw new Error(`${file} is readable by other users; run chmod 600 on it, or set it again with \`linear-strict auth judge-key set\`.`);
+    if (mode !== 0)
+      throw new Error(
+        `${file} is readable by other users; run chmod 600 on it, or set it again with \`linear-strict auth judge-key set\`.`,
+      );
     const key = readFileSync(file, 'utf8').trim();
     return key ? { key, source: file } : null;
   } catch (error) {
@@ -65,7 +68,10 @@ async function readSecret(prompt: string): Promise<string> {
 }
 
 /** `linear-strict auth judge-key <set|status|remove>`. Never prints the key. */
-export async function runJudgeKeyCli(args: string[], print: (message: string) => void): Promise<number> {
+export async function runJudgeKeyCli(
+  args: string[],
+  print: (message: string) => void,
+): Promise<number> {
   const file = judgeKeyPath();
   switch (args[0] ?? '') {
     case 'set': {
@@ -82,7 +88,11 @@ export async function runJudgeKeyCli(args: string[], print: (message: string) =>
     }
     case 'status': {
       const found = resolveJudgeKey(file);
-      print(found ? `Judge key from ${found.source}, ending …${found.key.slice(-4)}.` : `No judge key: set ANTHROPIC_API_KEY or run \`linear-strict auth judge-key set\` (${file}).`);
+      print(
+        found
+          ? `Judge key from ${found.source}, ending …${found.key.slice(-4)}.`
+          : `No judge key: set ANTHROPIC_API_KEY or run \`linear-strict auth judge-key set\` (${file}).`,
+      );
       return found ? 0 : 1;
     }
     case 'remove':
@@ -90,7 +100,9 @@ export async function runJudgeKeyCli(args: string[], print: (message: string) =>
       print(`Removed ${file}.`);
       return 0;
     default:
-      print('Usage: linear-strict auth judge-key <set|status|remove>\n  set reads the key from a hidden prompt, or from stdin when piped.');
+      print(
+        'Usage: linear-strict auth judge-key <set|status|remove>\n  set reads the key from a hidden prompt, or from stdin when piped.',
+      );
       return 1;
   }
 }

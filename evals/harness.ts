@@ -99,7 +99,9 @@ class DiskCache {
   get(key: string): Anthropic.Messages.Message | null {
     if (!this.dir) return null;
     try {
-      return JSON.parse(readFileSync(path.join(this.dir, `${key}.json`), 'utf8')) as Anthropic.Messages.Message;
+      return JSON.parse(
+        readFileSync(path.join(this.dir, `${key}.json`), 'utf8'),
+      ) as Anthropic.Messages.Message;
     } catch {
       return null;
     }
@@ -178,7 +180,9 @@ export async function runCase(evalCase: EvalCase, options: RunOptions): Promise<
       .map((block) => block.text)
       .join('\n');
 
-    const uses = response.content.filter((block): block is Anthropic.Messages.ToolUseBlock => block.type === 'tool_use');
+    const uses = response.content.filter(
+      (block): block is Anthropic.Messages.ToolUseBlock => block.type === 'tool_use',
+    );
     if (response.stop_reason !== 'tool_use' || uses.length === 0) break;
 
     const results: Anthropic.Messages.ToolResultBlockParam[] = [];
@@ -194,7 +198,12 @@ export async function runCase(evalCase: EvalCase, options: RunOptions): Promise<
         content = `Error: ${error}`;
       }
       toolCalls.push({ name: use.name, input: use.input, error });
-      results.push({ type: 'tool_result', tool_use_id: use.id, content, ...(error ? { is_error: true } : {}) });
+      results.push({
+        type: 'tool_result',
+        tool_use_id: use.id,
+        content,
+        ...(error ? { is_error: true } : {}),
+      });
     }
     messages.push({ role: 'user', content: results });
   }
@@ -203,7 +212,9 @@ export async function runCase(evalCase: EvalCase, options: RunOptions): Promise<
 }
 
 /** A copy of the conversation with a cache breakpoint on the last block. */
-function withTrailingBreakpoint(messages: Anthropic.Messages.MessageParam[]): Anthropic.Messages.MessageParam[] {
+function withTrailingBreakpoint(
+  messages: Anthropic.Messages.MessageParam[],
+): Anthropic.Messages.MessageParam[] {
   const last = messages.at(-1);
   if (!last) return messages;
   const blocks: Anthropic.Messages.ContentBlockParam[] =

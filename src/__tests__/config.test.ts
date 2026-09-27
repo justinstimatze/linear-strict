@@ -28,7 +28,9 @@ describe('getLinearApiToken', () => {
     const token = getLinearApiToken();
 
     expect(token).toBeUndefined();
-    expect(consoleErrorSpy).toHaveBeenCalledWith('API token not found in command line args or environment variables');
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      'API token not found in command line args or environment variables',
+    );
     expect(consoleErrorSpy).not.toHaveBeenCalledWith(
       'Environment variables:',
       expect.arrayContaining(['LINEAR_WEBHOOK_SECRET']),

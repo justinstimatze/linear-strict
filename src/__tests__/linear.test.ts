@@ -17,7 +17,10 @@ function fakeFetch(responses: Response[]) {
 }
 
 const json = (body: unknown, status = 200, headers: Record<string, string> = {}) =>
-  new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...headers } });
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json', ...headers },
+  });
 
 describe('authorizationHeader', () => {
   it('sends a personal API key raw and anything else as a Bearer token', () => {
@@ -33,9 +36,14 @@ describe('linearGql', () => {
     const { fetch, calls } = fakeFetch([json({ data: { viewer: { id: 'u1' } } })]);
     const gql = linearGql({ token: 'lin_api_x', fetch });
 
-    await expect(gql('query { viewer { id } }', { a: 1 })).resolves.toEqual({ viewer: { id: 'u1' } });
+    await expect(gql('query { viewer { id } }', { a: 1 })).resolves.toEqual({
+      viewer: { id: 'u1' },
+    });
     expect(calls[0]?.url).toBe('https://api.linear.app/graphql');
-    expect(JSON.parse(calls[0]?.init.body as string)).toEqual({ query: 'query { viewer { id } }', variables: { a: 1 } });
+    expect(JSON.parse(calls[0]?.init.body as string)).toEqual({
+      query: 'query { viewer { id } }',
+      variables: { a: 1 },
+    });
     expect((calls[0]?.init.headers as Record<string, string>)['Authorization']).toBe('lin_api_x');
   });
 
@@ -43,10 +51,17 @@ describe('linearGql', () => {
     const { fetch } = fakeFetch([
       json({
         data: { issue: null },
-        errors: [{ message: 'Entity not found', extensions: { userPresentableMessage: 'Could not find referenced Issue.' } }],
+        errors: [
+          {
+            message: 'Entity not found',
+            extensions: { userPresentableMessage: 'Could not find referenced Issue.' },
+          },
+        ],
       }),
     ]);
-    await expect(linearGql({ token: 't', fetch })('q')).rejects.toThrow('Could not find referenced Issue.');
+    await expect(linearGql({ token: 't', fetch })('q')).rejects.toThrow(
+      'Could not find referenced Issue.',
+    );
   });
 
   it('names the HTTP status when there is no GraphQL error to report', async () => {
@@ -60,12 +75,22 @@ describe('linearGql', () => {
       slept.push(ms);
       return Promise.resolve();
     };
-    const read = fakeFetch([new Response('upstream connect error', { status: 503 }), json({ data: { ok: true } })]);
-    await expect(linearGql({ token: 't', fetch: read.fetch, sleep })('query Q { ok }')).resolves.toEqual({ ok: true });
+    const read = fakeFetch([
+      new Response('upstream connect error', { status: 503 }),
+      json({ data: { ok: true } }),
+    ]);
+    await expect(
+      linearGql({ token: 't', fetch: read.fetch, sleep })('query Q { ok }'),
+    ).resolves.toEqual({ ok: true });
     expect(read.calls).toHaveLength(2);
 
-    const write = fakeFetch([new Response('upstream connect error', { status: 503 }), json({ data: { ok: true } })]);
-    await expect(linearGql({ token: 't', fetch: write.fetch, sleep })('mutation M { ok }')).rejects.toThrow('HTTP 503');
+    const write = fakeFetch([
+      new Response('upstream connect error', { status: 503 }),
+      json({ data: { ok: true } }),
+    ]);
+    await expect(
+      linearGql({ token: 't', fetch: write.fetch, sleep })('mutation M { ok }'),
+    ).rejects.toThrow('HTTP 503');
     expect(write.calls).toHaveLength(1);
   });
 
@@ -96,7 +121,11 @@ describe('linearGql', () => {
 
   it('gives up after two retries and says when the limit resets', async () => {
     const now = Date.UTC(2026, 8, 25, 4, 0, 0);
-    const limited = () => new Response('', { status: 429, headers: { 'X-RateLimit-Requests-Reset': String(now + 1_000) } });
+    const limited = () =>
+      new Response('', {
+        status: 429,
+        headers: { 'X-RateLimit-Requests-Reset': String(now + 1_000) },
+      });
     const { fetch, calls } = fakeFetch([limited(), limited(), limited()]);
     const gql = linearGql({ token: 't', fetch, now: () => now, sleep: () => Promise.resolve() });
 

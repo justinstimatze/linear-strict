@@ -5,7 +5,9 @@ import type { MCPToolDefinition } from './tools.js';
  * MCP requires outputSchema and structuredContent to be objects at the top
  * level, so an array result is advertised and returned inside `{ items }`.
  */
-function convertOutputSchema(outputSchema: MCPToolDefinition['output_schema']): Tool['outputSchema'] {
+function convertOutputSchema(
+  outputSchema: MCPToolDefinition['output_schema'],
+): Tool['outputSchema'] {
   if (outputSchema.type === 'array') {
     return { type: 'object', properties: { items: outputSchema }, required: ['items'] };
   }
@@ -29,8 +31,13 @@ export function convertToolDefinition(toolDef: MCPToolDefinition): Tool {
 }
 
 /** The structuredContent for a result, shaped like the outputSchema convertToolDefinition advertised. */
-export function buildStructuredContent(toolDef: MCPToolDefinition, result: unknown): Record<string, unknown> | undefined {
-  if (toolDef.output_schema.type === 'array') return Array.isArray(result) ? { items: result } : undefined;
-  if (result !== null && typeof result === 'object' && !Array.isArray(result)) return result as Record<string, unknown>;
+export function buildStructuredContent(
+  toolDef: MCPToolDefinition,
+  result: unknown,
+): Record<string, unknown> | undefined {
+  if (toolDef.output_schema.type === 'array')
+    return Array.isArray(result) ? { items: result } : undefined;
+  if (result !== null && typeof result === 'object' && !Array.isArray(result))
+    return result as Record<string, unknown>;
   return undefined;
 }

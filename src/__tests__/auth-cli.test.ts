@@ -35,7 +35,9 @@ function httpGet(url: string): Promise<number> {
       // agent: false avoids a lingering keep-alive socket (Jest open handle).
       .get(url, { agent: false }, (res) => {
         res.resume();
-        res.on('end', () => { resolve(res.statusCode ?? 0); });
+        res.on('end', () => {
+          resolve(res.statusCode ?? 0);
+        });
       })
       .on('error', reject);
   });

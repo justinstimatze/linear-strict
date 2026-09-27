@@ -42,7 +42,9 @@ describe('credential store', () => {
     delete process.env['LINEAR_STRICT_CONFIG_DIR'];
     process.env['XDG_CONFIG_HOME'] = '/custom/xdg';
 
-    expect(getCredentialsPath()).toBe(path.join('/custom/xdg', 'linear-strict', 'credentials.json'));
+    expect(getCredentialsPath()).toBe(
+      path.join('/custom/xdg', 'linear-strict', 'credentials.json'),
+    );
   });
 
   it('defaults to ~/.config/linear-strict', () => {
@@ -93,11 +95,9 @@ describe('credential store', () => {
   });
 
   it('returns undefined when required fields are missing', () => {
-    fs.writeFileSync(
-      getCredentialsPath(),
-      JSON.stringify({ clientId: 'only-a-client-id' }),
-      { mode: 0o600 },
-    );
+    fs.writeFileSync(getCredentialsPath(), JSON.stringify({ clientId: 'only-a-client-id' }), {
+      mode: 0o600,
+    });
 
     expect(readStoredCredentials()).toBeUndefined();
   });

@@ -39,7 +39,9 @@ export interface MarkerAttachment {
   metadata: Record<string, unknown> | null;
 }
 
-export function markerFromAttachment(attachment: MarkerAttachment | undefined): StoredMarker | null {
+export function markerFromAttachment(
+  attachment: MarkerAttachment | undefined,
+): StoredMarker | null {
   const data = attachment?.metadata;
   if (!data) return null;
   const text = (key: string) => (typeof data[key] === 'string' ? data[key] : undefined);

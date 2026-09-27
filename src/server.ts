@@ -19,7 +19,10 @@ export interface ServerConfig {
  * Server because McpServer.registerTool takes zod schemas, and these tools are
  * plain JSON Schema; the SDK deprecates Server for high-level use only.
  */
-export async function runServer(config: ServerConfig, transport: Transport): Promise<Elicitor & { close(): Promise<void> }> {
+export async function runServer(
+  config: ServerConfig,
+  transport: Transport,
+): Promise<Elicitor & { close(): Promise<void> }> {
   // eslint-disable-next-line @typescript-eslint/no-deprecated
   const server = new Server(
     { name: config.name, version: config.version },
@@ -34,8 +37,11 @@ export async function runServer(config: ServerConfig, transport: Transport): Pro
     try {
       const tool = byName.get(name);
       if (!tool) throw new Error(`Unknown tool: ${name}`);
-      const unknown = Object.keys(args ?? {}).filter((key) => !(key in tool.input_schema.properties));
-      if (unknown.length > 0) throw new Error(unknownArguments(tool, unknown, byName.get('set_fields')));
+      const unknown = Object.keys(args ?? {}).filter(
+        (key) => !(key in tool.input_schema.properties),
+      );
+      if (unknown.length > 0)
+        throw new Error(unknownArguments(tool, unknown, byName.get('set_fields')));
       const result = await config.call(name, args ?? {});
       const structuredContent = buildStructuredContent(tool, result);
       return {
@@ -45,7 +51,12 @@ export async function runServer(config: ServerConfig, transport: Transport): Pro
       };
     } catch (error) {
       return {
-        content: [{ type: 'text', text: `Error: ${error instanceof Error ? error.message : String(error)}` }],
+        content: [
+          {
+            type: 'text',
+            text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
         isError: true,
       };
     }
@@ -59,7 +70,11 @@ export async function runServer(config: ServerConfig, transport: Transport): Pro
  * Names what the tool does take, so the next call can be right. A field that
  * set_fields changes (an assignee on create_issue, say) is pointed there.
  */
-export function unknownArguments(tool: MCPToolDefinition, unknown: string[], setFields?: MCPToolDefinition): string {
+export function unknownArguments(
+  tool: MCPToolDefinition,
+  unknown: string[],
+  setFields?: MCPToolDefinition,
+): string {
   const accepted = Object.keys(tool.input_schema.properties);
   const viaFields =
     setFields && tool.name !== setFields.name
@@ -68,6 +83,8 @@ export function unknownArguments(tool: MCPToolDefinition, unknown: string[], set
   return [
     `Unknown argument(s) for ${tool.name}: ${unknown.join(', ')}.`,
     accepted.length > 0 ? `It takes: ${accepted.join(', ')}.` : 'It takes no arguments.',
-    ...(viaFields.length > 0 ? [`Set ${viaFields.join(', ')} with set_fields after this call.`] : []),
+    ...(viaFields.length > 0
+      ? [`Set ${viaFields.join(', ')} with set_fields after this call.`]
+      : []),
   ].join(' ');
 }

@@ -41,9 +41,7 @@ export function getLinearApiToken(): string | undefined {
   return tokenFromArgs || tokenFromEnv;
 }
 
-export type LinearAuthConfig =
-  | { type: 'oauth'; token: string }
-  | { type: 'apiKey'; token: string };
+export type LinearAuthConfig = { type: 'oauth'; token: string } | { type: 'apiKey'; token: string };
 
 /**
  * Resolve only explicitly supplied credentials (the --token CLI flag or the
@@ -81,7 +79,9 @@ export function getExplicitLinearAuthConfig(): LinearAuthConfig | undefined {
 }
 
 export function isDebugLoggingEnabled(): boolean {
-  return process.env['LINEAR_STRICT_DEBUG'] === '1' || process.env['LINEAR_STRICT_DEBUG'] === 'true';
+  return (
+    process.env['LINEAR_STRICT_DEBUG'] === '1' || process.env['LINEAR_STRICT_DEBUG'] === 'true'
+  );
 }
 
 /**

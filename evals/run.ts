@@ -32,7 +32,9 @@ if (!process.env['ANTHROPIC_API_KEY']) {
 const samples = Number(values.samples);
 const concurrency = Number(values.concurrency);
 const filters = values.case ?? [];
-const cases = CASES.filter((evalCase) => filters.length === 0 || filters.some((filter) => evalCase.name.includes(filter)));
+const cases = CASES.filter(
+  (evalCase) => filters.length === 0 || filters.some((filter) => evalCase.name.includes(filter)),
+);
 if (cases.length === 0) {
   console.error(`No case matches ${filters.join(', ')}. --list shows them.`);
   process.exit(2);
@@ -43,7 +45,10 @@ const usage = emptyUsage();
 const cacheDir = values['no-cache'] ? null : path.join(root, 'evals/.cache');
 const resultsDir = path.join(root, 'evals/results');
 mkdirSync(resultsDir, { recursive: true });
-const resultsFile = path.join(resultsDir, `${new Date().toISOString().replace(/[:.]/g, '-')}.jsonl`);
+const resultsFile = path.join(
+  resultsDir,
+  `${new Date().toISOString().replace(/[:.]/g, '-')}.jsonl`,
+);
 
 interface Job {
   evalCase: EvalCase;
@@ -57,12 +62,20 @@ interface Outcome extends Job {
 }
 
 const jobs: Job[] = values.model.flatMap((model) =>
-  cases.flatMap((evalCase) => Array.from({ length: samples }, (_, sample) => ({ evalCase, model, sample }))),
+  cases.flatMap((evalCase) =>
+    Array.from({ length: samples }, (_, sample) => ({ evalCase, model, sample })),
+  ),
 );
 
 async function runJob(job: Job): Promise<Outcome> {
   try {
-    const run = await runCase(job.evalCase, { client, model: job.model, sample: job.sample, cacheDir, usage });
+    const run = await runCase(job.evalCase, {
+      client,
+      model: job.model,
+      sample: job.sample,
+      cacheDir,
+      usage,
+    });
     const checks = job.evalCase.grade(run);
     const failed = checks.filter((result) => !result.ok);
     appendFileSync(
@@ -82,10 +95,18 @@ async function runJob(job: Job): Promise<Outcome> {
         final_state: run.state.issue.stateId,
       })}\n`,
     );
-    return { ...job, pass: failed.length === 0, failed: failed.map((result) => result.detail ?? result.name), error: null };
+    return {
+      ...job,
+      pass: failed.length === 0,
+      failed: failed.map((result) => result.detail ?? result.name),
+      error: null,
+    };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    appendFileSync(resultsFile, `${JSON.stringify({ case: job.evalCase.name, model: job.model, sample: job.sample, error: message })}\n`);
+    appendFileSync(
+      resultsFile,
+      `${JSON.stringify({ case: job.evalCase.name, model: job.model, sample: job.sample, error: message })}\n`,
+    );
     return { ...job, pass: false, failed: [], error: message };
   }
 }
@@ -100,7 +121,9 @@ await Promise.all(
       if (!job) break;
       const outcome = await runJob(job);
       outcomes.push(outcome);
-      console.error(`${outcome.pass ? 'pass' : 'FAIL'}  ${job.model}  ${job.evalCase.name} #${String(job.sample)}${outcome.error ? `  error: ${outcome.error}` : ''}`);
+      console.error(
+        `${outcome.pass ? 'pass' : 'FAIL'}  ${job.model}  ${job.evalCase.name} #${String(job.sample)}${outcome.error ? `  error: ${outcome.error}` : ''}`,
+      );
     }
   }),
 );
@@ -109,12 +132,15 @@ console.log('');
 for (const model of values.model) {
   console.log(model);
   for (const evalCase of cases) {
-    const mine = outcomes.filter((outcome) => outcome.model === model && outcome.evalCase === evalCase);
+    const mine = outcomes.filter(
+      (outcome) => outcome.model === model && outcome.evalCase === evalCase,
+    );
     const passed = mine.filter((outcome) => outcome.pass).length;
     console.log(`  ${String(passed)}/${String(mine.length)}  ${evalCase.name}`);
     const reasons = new Map<string, number>();
     for (const outcome of mine) {
-      for (const reason of outcome.error ? [`error: ${outcome.error}`] : outcome.failed) reasons.set(reason, (reasons.get(reason) ?? 0) + 1);
+      for (const reason of outcome.error ? [`error: ${outcome.error}`] : outcome.failed)
+        reasons.set(reason, (reasons.get(reason) ?? 0) + 1);
     }
     for (const [reason, count] of reasons) console.log(`        ${String(count)}× ${reason}`);
   }

@@ -91,11 +91,13 @@ export function fileSignOffStore(dir = defaultSignOffDir()): SignOffStore {
     put: (pending) => {
       write(file(pending.token, 'pending'), pending);
     },
-    get: (token) => (TOKEN.test(token) ? (read(file(token, 'pending')) as PendingSignOff | null) : null),
+    get: (token) =>
+      TOKEN.test(token) ? (read(file(token, 'pending')) as PendingSignOff | null) : null,
     record: (answer) => {
       write(file(answer.token, 'answer'), answer);
     },
-    answer: (token) => (TOKEN.test(token) ? (read(file(token, 'answer')) as RecordedAnswer | null) : null),
+    answer: (token) =>
+      TOKEN.test(token) ? (read(file(token, 'answer')) as RecordedAnswer | null) : null,
     delete: (token) => {
       rmSync(file(token, 'pending'), { force: true });
       rmSync(file(token, 'answer'), { force: true });

@@ -34,8 +34,10 @@ function validateImpact(patch: SectionPatch): string[] {
   const errors: string[] = [];
   const lines = splitLines(patch.body).filter((line) => line.trim() !== '');
   if (patch.mode !== 'replace') errors.push('Impact: use mode "replace"; there is one Impact line');
-  if (lines.length !== 1) errors.push('Impact: one line, in plain language a PM or exec would understand');
-  if (lines.some((line) => HEADING.test(line) || line.includes('<!--'))) errors.push('Impact: plain text only');
+  if (lines.length !== 1)
+    errors.push('Impact: one line, in plain language a PM or exec would understand');
+  if (lines.some((line) => HEADING.test(line) || line.includes('<!--')))
+    errors.push('Impact: plain text only');
   return errors;
 }
 
@@ -53,7 +55,8 @@ const FENCE = /^\s*(```|~~~)/;
 const BOUNDARY = /<!--\s*(?:[\w.-]+:begin|strict:reconciled\b[^>]*)\s*-->/;
 const GENERATED_ANY = /<!--\s*[\w.-]+:(begin|end)\s*-->/;
 // A time after the date is allowed (2026-09-25 04:40Z); only the date is checked.
-const OBSERVED_LINE = /^(?:[-*]\s+)?(\d{4}-\d{2}-\d{2})(?:[T ]\d{2}:\d{2}(?::\d{2})?(?:Z|[+-]\d{2}:?\d{2}| ?UTC)?)?\s+·\s+(\S.*?)\s+·\s+(\S.*)$/;
+const OBSERVED_LINE =
+  /^(?:[-*]\s+)?(\d{4}-\d{2}-\d{2})(?:[T ]\d{2}:\d{2}(?::\d{2})?(?:Z|[+-]\d{2}:?\d{2}| ?UTC)?)?\s+·\s+(\S.*?)\s+·\s+(\S.*)$/;
 const CHECKLIST_LINE = /^[-*]\s+\[( |x|X)\]\s+\S/;
 const QUESTION_ROW = /^[-*]\s+(Q\d+)\s+·\s+(OPEN|ANSWERED\b[^·]*?)\s*·/;
 
@@ -113,7 +116,9 @@ function findSection(lines: string[], name: SectionName): SectionSpan | null {
   let end = lines.length;
   const next = headings.find((h) => h.line > heading.line && h.level <= heading.level);
   if (next) end = next.line;
-  const generated = lines.findIndex((line, i) => i > heading.line && i < end && BOUNDARY.test(line));
+  const generated = lines.findIndex(
+    (line, i) => i > heading.line && i < end && BOUNDARY.test(line),
+  );
   if (generated !== -1) end = generated;
   return { headingLine: heading.line, level: heading.level, start: heading.line + 1, end };
 }
@@ -145,14 +150,20 @@ export function validateSectionBody(section: SectionName, body: string): string[
 
   if (lines.length === 0) errors.push(`${section}: body is empty`);
   if (GENERATED_ANY.test(body)) {
-    errors.push(`${section}: body contains a generated-block marker; generated blocks are written by tools only`);
+    errors.push(
+      `${section}: body contains a generated-block marker; generated blocks are written by tools only`,
+    );
   }
   if (body.includes('strict:reconciled')) {
-    errors.push(`${section}: body contains the reconciled marker; set it with reconciled_through instead`);
+    errors.push(
+      `${section}: body contains the reconciled marker; set it with reconciled_through instead`,
+    );
   }
   for (const line of lines) {
     if (HEADING.test(line)) {
-      errors.push(`${section}: body contains a heading ("${line.trim()}"), which would split the section`);
+      errors.push(
+        `${section}: body contains a heading ("${line.trim()}"), which would split the section`,
+      );
     }
   }
 
@@ -163,7 +174,9 @@ export function validateSectionBody(section: SectionName, body: string): string[
         const sourced = line.split(' · ').length >= 3;
         errors.push(
           `Observed: "${line.trim()}" is not "YYYY-MM-DD · <source> · <result>" (a time after the date is fine).` +
-            (sourced ? '' : ' A line with no source is a hypothesis; put it under Cause as "not established" instead.'),
+            (sourced
+              ? ''
+              : ' A line with no source is a hypothesis; put it under Cause as "not established" instead.'),
         );
       } else if (Number.isNaN(Date.parse(`${match[1]}T00:00:00Z`))) {
         errors.push(`Observed: "${match[1]}" is not a real date`);
@@ -174,7 +187,9 @@ export function validateSectionBody(section: SectionName, body: string): string[
   if (section === 'Done when') {
     for (const line of lines) {
       if (!CHECKLIST_LINE.test(line.trim())) {
-        errors.push(`Done when: "${line.trim()}" is not a checklist item ("- [ ] <check that proves it>")`);
+        errors.push(
+          `Done when: "${line.trim()}" is not a checklist item ("- [ ] <check that proves it>")`,
+        );
       }
     }
   }
@@ -202,7 +217,9 @@ export function applySectionPatches(
     }
     const name = canonicalName(patch.section);
     if (!name) {
-      errors.push(`"${patch.section}" is not a known section (${[IMPACT, ...SECTION_ORDER].join(', ')})`);
+      errors.push(
+        `"${patch.section}" is not a known section (${[IMPACT, ...SECTION_ORDER].join(', ')})`,
+      );
       continue;
     }
     if (!allowed.includes(name)) {
@@ -221,13 +238,21 @@ export function applySectionPatches(
 
   let result = description;
   for (const patch of resolved) {
-    result = patch.name === IMPACT ? setImpactLine(result, patch.body) : patchSection(result, patch.name, patch.mode, patch.body);
+    result =
+      patch.name === IMPACT
+        ? setImpactLine(result, patch.body)
+        : patchSection(result, patch.name, patch.mode, patch.body);
   }
   return result;
 }
 
 /** Applies one patch without validation. Exported for the ask/answer row writers. */
-export function patchSection(description: string, name: SectionName, mode: PatchMode, body: string): string {
+export function patchSection(
+  description: string,
+  name: SectionName,
+  mode: PatchMode,
+  body: string,
+): string {
   const lines = splitLines(description);
   const span = findSection(lines, name);
   const existing = span ? trimBlankEdges(lines.slice(span.start, span.end)) : [];
@@ -303,13 +328,15 @@ export interface ReconciledMarker {
   checked?: string | undefined;
 }
 
-const MARKER = /^<!--\s*strict:reconciled\s+through=(\S+)\s+at=(\S+)\s+by="([^"]*)"(?:\s+checked=(\S+))?\s*-->\s*$/;
+const MARKER =
+  /^<!--\s*strict:reconciled\s+through=(\S+)\s+at=(\S+)\s+by="([^"]*)"(?:\s+checked=(\S+))?\s*-->\s*$/;
 
 export function readMarker(description: string): ReconciledMarker | null {
   for (const line of splitLines(description)) {
     const match = MARKER.exec(line.trim());
     const [, through, at, by, checked] = match ?? [];
-    if (through && at && by !== undefined) return checked ? { through, at, by, checked } : { through, at, by };
+    if (through && at && by !== undefined)
+      return checked ? { through, at, by, checked } : { through, at, by };
   }
   return null;
 }
@@ -354,7 +381,8 @@ export function lintForState(description: string, stateType: string | null): Fin
   const findings = lintDescription(description);
   const missing = findings.filter((finding) => finding.code === 'missing_section');
   const rest = findings.filter((finding) => finding.code !== 'missing_section');
-  if (stateType === 'completed' || stateType === 'canceled' || stateType === 'duplicate') return rest;
+  if (stateType === 'completed' || stateType === 'canceled' || stateType === 'duplicate')
+    return rest;
   if (missing.length === 2) {
     return [
       {
@@ -392,13 +420,15 @@ export function lintDescription(description: string): Finding[] {
         findings.push({ code: 'empty_section', detail: `"${name}" is empty` });
         continue;
       }
-      for (const error of validateSectionBody(name, body)) findings.push({ code: 'invalid_line', detail: error });
+      for (const error of validateSectionBody(name, body))
+        findings.push({ code: 'invalid_line', detail: error });
     }
   }
   return findings;
 }
 
-const TYPED_COMMENT = /^🤖 .+ · \d{4}-\d{2}-\d{2} · (evidence|correction|ask|answer|closed_by|descope)\b/;
+const TYPED_COMMENT =
+  /^🤖 .+ · \d{4}-\d{2}-\d{2} · (evidence|correction|ask|answer|closed_by|descope)\b/;
 
 /** The kind of a comment written by this server, or null for any other comment. */
 export function commentKind(body: string): string | null {
@@ -424,7 +454,10 @@ export function listQuestions(description: string): QuestionRow[] {
 }
 
 export function nextQuestionId(description: string): string {
-  const max = listQuestions(description).reduce((n, row) => Math.max(n, Number(row.id.slice(1))), 0);
+  const max = listQuestions(description).reduce(
+    (n, row) => Math.max(n, Number(row.id.slice(1))),
+    0,
+  );
   return `Q${max + 1}`;
 }
 
@@ -435,7 +468,14 @@ function oneLine(text: string): string {
 /** Appends an OPEN row to Open questions, creating the section if needed. */
 export function addQuestion(
   description: string,
-  row: { id: string; date: string; askedBy: string; askedTo?: string | undefined; question: string; link: string },
+  row: {
+    id: string;
+    date: string;
+    askedBy: string;
+    askedTo?: string | undefined;
+    question: string;
+    link: string;
+  },
 ): string {
   const who = row.askedTo ? `${row.askedBy} → ${oneLine(row.askedTo)}` : row.askedBy;
   const text = `- ${row.id} · OPEN · ${row.date} · ${who} · ${oneLine(row.question)} · [ask](${row.link})`;
@@ -443,20 +483,32 @@ export function addQuestion(
 }
 
 /** Flips one OPEN row to ANSWERED with a link to the answer. */
-export function answerQuestion(description: string, id: string, date: string, link: string): string {
+export function answerQuestion(
+  description: string,
+  id: string,
+  date: string,
+  link: string,
+): string {
   const rows = listQuestions(description);
   const row = rows.find((candidate) => candidate.id === id);
   if (!row) {
-    const known = rows.map((candidate) => `${candidate.id}${candidate.open ? '' : ' (answered)'}`).join(', ');
-    throw new Error(`No question ${id} under Open questions${known ? `; rows are ${known}` : '; the section is empty'}`);
+    const known = rows
+      .map((candidate) => `${candidate.id}${candidate.open ? '' : ' (answered)'}`)
+      .join(', ');
+    throw new Error(
+      `No question ${id} under Open questions${known ? `; rows are ${known}` : '; the section is empty'}`,
+    );
   }
   if (!row.open) throw new Error(`${id} is already answered: ${row.line}`);
 
   const lines = splitLines(description);
   const span = findSection(lines, 'Open questions');
-  const index = span ? lines.findIndex((line, i) => i >= span.start && i < span.end && line.trim() === row.line) : -1;
+  const index = span
+    ? lines.findIndex((line, i) => i >= span.start && i < span.end && line.trim() === row.line)
+    : -1;
   const target = lines[index];
-  if (target === undefined) throw new Error(`Could not locate ${id} in the description to update it`);
+  if (target === undefined)
+    throw new Error(`Could not locate ${id} in the description to update it`);
   lines[index] = target.replace(/·\s+OPEN\s+·/, `· ANSWERED ${date} [answer](${link}) ·`);
   return lines.join('\n');
 }
@@ -492,7 +544,9 @@ export interface UncitedItem {
  * ("Observed 2", counted from 1), or a command and its result.
  */
 export function uncitedTicks(description: string): UncitedItem[] {
-  const observed = (readSection(description, 'Observed') ?? '').split('\n').filter((line) => line.trim() !== '').length;
+  const observed = (readSection(description, 'Observed') ?? '')
+    .split('\n')
+    .filter((line) => line.trim() !== '').length;
   const uncited: UncitedItem[] = [];
   for (const line of (readSection(description, 'Done when') ?? '').split('\n')) {
     const item = TICKED.exec(line.trim())?.[1];
@@ -508,7 +562,11 @@ export function uncitedTicks(description: string): UncitedItem[] {
     }
     for (const match of tail.matchAll(/\bObserved\s+(\d+)\b/gi)) {
       const n = Number(match[1]);
-      if (n < 1 || n > observed) uncited.push({ item, reason: `Observed has ${String(observed)} lines, so there is no Observed ${String(n)}` });
+      if (n < 1 || n > observed)
+        uncited.push({
+          item,
+          reason: `Observed has ${String(observed)} lines, so there is no Observed ${String(n)}`,
+        });
     }
   }
   return uncited;
@@ -520,7 +578,8 @@ export function citedPullRequestNumbers(description: string): number[] {
   for (const line of (readSection(description, 'Done when') ?? '').split('\n')) {
     const tail = evidenceTail(TICKED.exec(line.trim())?.[1] ?? '');
     if (!tail) continue;
-    for (const match of tail.matchAll(/(?:^|[\s(])#(\d+)\b|\/pull\/(\d+)/g)) numbers.add(Number(match[1] ?? match[2]));
+    for (const match of tail.matchAll(/(?:^|[\s(])#(\d+)\b|\/pull\/(\d+)/g))
+      numbers.add(Number(match[1] ?? match[2]));
   }
   return [...numbers].sort((a, b) => a - b);
 }

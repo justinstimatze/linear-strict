@@ -119,7 +119,10 @@ export function writeStoredCredentials(credentials: StoredCredentials): void {
   fs.mkdirSync(configDir, { recursive: true, mode: 0o700 });
 
   const destination = getCredentialsPath();
-  const tempPath = path.join(configDir, `.${CREDENTIALS_FILE_NAME}.${randomBytes(6).toString('hex')}.tmp`);
+  const tempPath = path.join(
+    configDir,
+    `.${CREDENTIALS_FILE_NAME}.${randomBytes(6).toString('hex')}.tmp`,
+  );
 
   fs.writeFileSync(tempPath, `${JSON.stringify(credentials, null, 2)}\n`, { mode: 0o600 });
   try {

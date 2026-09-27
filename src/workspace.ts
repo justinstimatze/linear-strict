@@ -133,7 +133,12 @@ interface NotificationNode {
   snoozedUntilAt: string | null;
   actor: { name: string; app?: boolean | null } | null;
   botActor: { name: string | null } | null;
-  issue?: { identifier: string; title: string; url: string; state: { name: string; type: string } | null } | null;
+  issue?: {
+    identifier: string;
+    title: string;
+    url: string;
+    state: { name: string; type: string } | null;
+  } | null;
   comment?: { id: string; url: string } | null;
 }
 
@@ -142,7 +147,12 @@ export const CYCLE_WHEN: readonly CycleWhen[] = ['current', 'upcoming', 'past', 
 
 function nestedOmission(field: string, owner: string, connection: Connection<unknown>): Omission[] {
   return connection.pageInfo.hasNextPage
-    ? [{ field: `${owner}.${field}`, reason: `more than ${connection.nodes.length} ${field}; only the first page was fetched` }]
+    ? [
+        {
+          field: `${owner}.${field}`,
+          reason: `more than ${connection.nodes.length} ${field}; only the first page was fetched`,
+        },
+      ]
     : [];
 }
 
@@ -160,17 +170,29 @@ export class StrictWorkspace {
 
   /** Every team with its workflow states, in board order. */
   async listTeams() {
-    const { nodes, omitted } = await paginate<TeamNode>('teams', async (after) => {
-      const data = await this.gql<{ teams: Connection<TeamNode> }>(TEAMS_QUERY, { first: TEAM_PAGE, after });
-      return data.teams;
-    }, TEAM_PAGE);
+    const { nodes, omitted } = await paginate<TeamNode>(
+      'teams',
+      async (after) => {
+        const data = await this.gql<{ teams: Connection<TeamNode> }>(TEAMS_QUERY, {
+          first: TEAM_PAGE,
+          after,
+        });
+        return data.teams;
+      },
+      TEAM_PAGE,
+    );
     return {
       teams: nodes.map((team) => ({
         key: team.key,
         name: team.name,
-        states: [...team.states.nodes].sort((a, b) => a.position - b.position).map(({ name, type }) => ({ name, type })),
+        states: [...team.states.nodes]
+          .sort((a, b) => a.position - b.position)
+          .map(({ name, type }) => ({ name, type })),
       })),
-      omitted: [...omitted, ...nodes.flatMap((team) => nestedOmission('states', team.key, team.states))],
+      omitted: [
+        ...omitted,
+        ...nodes.flatMap((team) => nestedOmission('states', team.key, team.states)),
+      ],
     };
   }
 
@@ -184,12 +206,23 @@ export class StrictWorkspace {
           : when === 'past'
             ? { isPast: { eq: true } }
             : {};
-    const filter = { ...timing, ...(args.team ? { team: { key: { eqIgnoreCase: args.team } } } : {}) };
+    const filter = {
+      ...timing,
+      ...(args.team ? { team: { key: { eqIgnoreCase: args.team } } } : {}),
+    };
 
-    const { nodes, omitted } = await paginate<CycleNode>('cycles', async (after) => {
-      const data = await this.gql<{ cycles: Connection<CycleNode> }>(CYCLES_QUERY, { first: CYCLE_PAGE, after, filter });
-      return data.cycles;
-    }, CYCLE_PAGE);
+    const { nodes, omitted } = await paginate<CycleNode>(
+      'cycles',
+      async (after) => {
+        const data = await this.gql<{ cycles: Connection<CycleNode> }>(CYCLES_QUERY, {
+          first: CYCLE_PAGE,
+          after,
+          filter,
+        });
+        return data.cycles;
+      },
+      CYCLE_PAGE,
+    );
     return {
       cycles: nodes
         .map((cycle) => ({
@@ -214,14 +247,18 @@ export class StrictWorkspace {
       ...(args.team ? { accessibleTeams: { some: { key: { eqIgnoreCase: args.team } } } } : {}),
       ...(args.include_closed ? {} : { status: { type: { nin: ['completed', 'canceled'] } } }),
     };
-    const { nodes, omitted } = await paginate<ProjectNode>('projects', async (after) => {
-      const data = await this.gql<{ projects: Connection<ProjectNode> }>(PROJECTS_QUERY, {
-        first: PROJECT_PAGE,
-        after,
-        filter,
-      });
-      return data.projects;
-    }, PROJECT_PAGE);
+    const { nodes, omitted } = await paginate<ProjectNode>(
+      'projects',
+      async (after) => {
+        const data = await this.gql<{ projects: Connection<ProjectNode> }>(PROJECTS_QUERY, {
+          first: PROJECT_PAGE,
+          after,
+          filter,
+        });
+        return data.projects;
+      },
+      PROJECT_PAGE,
+    );
     return {
       projects: nodes.map((project) => ({
         id: project.id,
@@ -237,20 +274,30 @@ export class StrictWorkspace {
         url: project.url,
       })),
       include_closed: args.include_closed ?? false,
-      omitted: [...omitted, ...nodes.flatMap((project) => nestedOmission('teams', project.name, project.teams))],
+      omitted: [
+        ...omitted,
+        ...nodes.flatMap((project) => nestedOmission('teams', project.name, project.teams)),
+      ],
     };
   }
 
   async listInitiatives(args: { include_closed?: boolean | undefined }) {
     const filter = args.include_closed ? {} : { status: { neq: 'Completed' } };
-    const { nodes, omitted } = await paginate<InitiativeNode>('initiatives', async (after) => {
-      const data = await this.gql<{ initiatives: Connection<InitiativeNode> }>(INITIATIVES_QUERY, {
-        first: INITIATIVE_PAGE,
-        after,
-        filter,
-      });
-      return data.initiatives;
-    }, INITIATIVE_PAGE);
+    const { nodes, omitted } = await paginate<InitiativeNode>(
+      'initiatives',
+      async (after) => {
+        const data = await this.gql<{ initiatives: Connection<InitiativeNode> }>(
+          INITIATIVES_QUERY,
+          {
+            first: INITIATIVE_PAGE,
+            after,
+            filter,
+          },
+        );
+        return data.initiatives;
+      },
+      INITIATIVE_PAGE,
+    );
     return {
       initiatives: nodes.map((initiative) => ({
         id: initiative.id,
@@ -285,14 +332,16 @@ export class StrictWorkspace {
   }) {
     const unreadOnly = args.unread_only ?? true;
     const first = args.first ?? 50;
-    if (!Number.isInteger(first) || first < 1 || first > 100) throw new Error('first must be an integer from 1 to 100');
+    if (!Number.isInteger(first) || first < 1 || first > 100)
+      throw new Error('first must be an integer from 1 to 100');
     if (args.since !== undefined && Number.isNaN(Date.parse(args.since))) {
       throw new Error('since must be an ISO date or timestamp, e.g. 2026-09-24');
     }
     const filter = args.since ? { createdAt: { gte: args.since } } : {};
     const now = this.now().getTime();
     const isUnread = (node: NotificationNode) =>
-      node.readAt === null && (node.snoozedUntilAt === null || Date.parse(node.snoozedUntilAt) <= now);
+      node.readAt === null &&
+      (node.snoozedUntilAt === null || Date.parse(node.snoozedUntilAt) <= now);
 
     let unreadCount = 0;
     let after: string | null = args.after ?? null;
@@ -329,7 +378,12 @@ export class StrictWorkspace {
 
     return {
       notifications: kept.map((node) => {
-        const author = commentAuthorKind({ body: '', user: node.actor, botActor: node.botActor, externalUser: null });
+        const author = commentAuthorKind({
+          body: '',
+          user: node.actor,
+          botActor: node.botActor,
+          externalUser: null,
+        });
         return {
           id: node.id,
           type: node.type,
@@ -338,7 +392,12 @@ export class StrictWorkspace {
           actor: node.actor?.name ?? node.botActor?.name ?? null,
           actor_kind: author.kind,
           issue: node.issue
-            ? { identifier: node.issue.identifier, title: node.issue.title, state: node.issue.state?.name ?? null, url: node.issue.url }
+            ? {
+                identifier: node.issue.identifier,
+                title: node.issue.title,
+                state: node.issue.state?.name ?? null,
+                url: node.issue.url,
+              }
             : null,
           comment_id: node.comment?.id ?? null,
           ...(node.issue ? {} : { about: node.__typename }),
@@ -360,10 +419,17 @@ export class StrictWorkspace {
     const results = [];
     for (const id of ids) {
       try {
-        const data = await this.gql<{ notificationUpdate: { success: boolean } }>(NOTIFICATION_READ, { id, input: { readAt } });
+        const data = await this.gql<{ notificationUpdate: { success: boolean } }>(
+          NOTIFICATION_READ,
+          { id, input: { readAt } },
+        );
         results.push({ id, read: data.notificationUpdate.success });
       } catch (error) {
-        results.push({ id, read: false, error: error instanceof Error ? error.message : String(error) });
+        results.push({
+          id,
+          read: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
     }
     return { results, read_at: readAt };

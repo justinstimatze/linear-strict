@@ -32,7 +32,12 @@ interface Note {
   snoozedUntilAt: string | null;
   actor: { name: string; app: boolean } | null;
   botActor: null;
-  issue: { identifier: string; title: string; url: string; state: { name: string; type: string } } | null;
+  issue: {
+    identifier: string;
+    title: string;
+    url: string;
+    state: { name: string; type: string };
+  } | null;
   comment: { id: string; url: string } | null;
 }
 
@@ -46,7 +51,12 @@ function note(n: number, read: boolean, app = false): Note {
     snoozedUntilAt: null,
     actor: { name: app ? 'agent-b' : 'Ada', app },
     botActor: null,
-    issue: { identifier: `ENG-${String(n)}`, title: `Ticket ${String(n)}`, url: `https://l/ENG-${String(n)}`, state: { name: 'Todo', type: 'unstarted' } },
+    issue: {
+      identifier: `ENG-${String(n)}`,
+      title: `Ticket ${String(n)}`,
+      url: `https://l/ENG-${String(n)}`,
+      state: { name: 'Todo', type: 'unstarted' },
+    },
     comment: { id: `c-${String(n)}`, url: `https://l/c-${String(n)}` },
   };
 }
@@ -59,8 +69,18 @@ describe('workspace lists', () => {
     ];
     const { gql, calls } = fakeGql((_op, variables) =>
       variables['after'] === null
-        ? { teams: page([{ id: 't1', key: 'ENG', name: 'Eng', states: page(states, null) }], 'cursor-1') }
-        : { teams: page([{ id: 't2', key: 'OPS', name: 'Ops', states: page(states, 'more') }], null) },
+        ? {
+            teams: page(
+              [{ id: 't1', key: 'ENG', name: 'Eng', states: page(states, null) }],
+              'cursor-1',
+            ),
+          }
+        : {
+            teams: page(
+              [{ id: 't2', key: 'OPS', name: 'Ops', states: page(states, 'more') }],
+              null,
+            ),
+          },
     );
     const result = await new StrictWorkspace(gql).listTeams();
 
@@ -109,8 +129,14 @@ describe('notifications', () => {
   it('leaves out notifications still snoozed', async () => {
     const snoozed = { ...note(1, false), snoozedUntilAt: '2026-10-01T00:00:00.000Z' };
     const woke = { ...note(2, false), snoozedUntilAt: '2026-09-01T00:00:00.000Z' };
-    const { gql } = fakeGql(() => ({ notificationsUnreadCount: 1, notifications: page([snoozed, woke], null) }));
-    const result = await new StrictWorkspace(gql, () => new Date('2026-09-24T00:00:00.000Z')).notifications({});
+    const { gql } = fakeGql(() => ({
+      notificationsUnreadCount: 1,
+      notifications: page([snoozed, woke], null),
+    }));
+    const result = await new StrictWorkspace(
+      gql,
+      () => new Date('2026-09-24T00:00:00.000Z'),
+    ).notifications({});
     expect(result.notifications.map((n) => n.id)).toEqual(['n-2']);
   });
 
@@ -127,7 +153,9 @@ describe('notifications', () => {
 
   it('refuses a since that is not a date', async () => {
     const { gql } = fakeGql(() => ({}));
-    await expect(new StrictWorkspace(gql).notifications({ since: 'yesterday' })).rejects.toThrow(/ISO date/);
+    await expect(new StrictWorkspace(gql).notifications({ since: 'yesterday' })).rejects.toThrow(
+      /ISO date/,
+    );
   });
 
   it('marks each notification read and reports failures per id', async () => {
@@ -184,13 +212,22 @@ describe('list_issues returns the whole set', () => {
       c1: page([ticket(3, 'Done')], 'c2'),
       c2: page([ticket(4, 'Todo')], null),
     };
-    const { gql, calls } = fakeGql((_op, variables) => ({ issues: pages[(variables['after'] as string | null) ?? 'start'] }));
+    const { gql, calls } = fakeGql((_op, variables) => ({
+      issues: pages[(variables['after'] as string | null) ?? 'start'],
+    }));
     const strict = new StrictLinear({ gql, claims: memoryClaimStore() });
 
     const result = await strict.listIssues({ team: 'ENG', cycle: 4 });
     expect(calls).toHaveLength(3);
     expect(result).toMatchObject({ total: 4, complete: true, by_state: { Todo: 3, Done: 1 } });
-    expect(result.columns).toEqual(['identifier', 'title', 'state', 'assignee', 'delegate', 'updatedAt']);
+    expect(result.columns).toEqual([
+      'identifier',
+      'title',
+      'state',
+      'assignee',
+      'delegate',
+      'updatedAt',
+    ]);
     expect(result.rows.map((row) => row[0])).toEqual(['ENG-1', 'ENG-2', 'ENG-3', 'ENG-4']);
     expect(result).not.toHaveProperty('next_cursor');
   });
@@ -201,13 +238,22 @@ describe('list_issues returns the whole set', () => {
       return { issues: page([ticket(1, 'Todo')], 'c1') };
     });
     const strict = new StrictLinear({ gql, claims: memoryClaimStore() });
-    await expect(strict.listIssues({ team: 'ENG' })).rejects.toThrow(/page 2 after 1 tickets \(Linear is down\)\. Nothing is returned/);
+    await expect(strict.listIssues({ team: 'ENG' })).rejects.toThrow(
+      /page 2 after 1 tickets \(Linear is down\)\. Nothing is returned/,
+    );
   });
 
   it('refuses a set too large to return whole and says how to narrow it', async () => {
     let n = 0;
-    const { gql } = fakeGql(() => ({ issues: page(Array.from({ length: 100 }, () => ticket((n += 1), 'Todo')), 'more') }));
+    const { gql } = fakeGql(() => ({
+      issues: page(
+        Array.from({ length: 100 }, () => ticket((n += 1), 'Todo')),
+        'more',
+      ),
+    }));
     const strict = new StrictLinear({ gql, claims: memoryClaimStore() });
-    await expect(strict.listIssues({ team: 'ENG' })).rejects.toThrow(/More than 2000 tickets match.*open: true/);
+    await expect(strict.listIssues({ team: 'ENG' })).rejects.toThrow(
+      /More than 2000 tickets match.*open: true/,
+    );
   });
 });

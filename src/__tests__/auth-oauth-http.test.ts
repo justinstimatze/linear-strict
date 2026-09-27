@@ -1,9 +1,5 @@
 import { jest } from '@jest/globals';
-import {
-  exchangeAuthorizationCode,
-  refreshAccessToken,
-  revokeToken,
-} from '../auth/oauth-http.js';
+import { exchangeAuthorizationCode, refreshAccessToken, revokeToken } from '../auth/oauth-http.js';
 
 function jsonResponse(status: number, payload: unknown) {
   return {
@@ -69,14 +65,18 @@ describe('OAuth token endpoint client', () => {
     });
 
     it('uses PKCE without sending or requiring a client secret', async () => {
-      fetchSpy.mockResolvedValueOnce(jsonResponse(200, { access_token: 'new-access-token', scope: 'read' }));
+      fetchSpy.mockResolvedValueOnce(
+        jsonResponse(200, { access_token: 'new-access-token', scope: 'read' }),
+      );
 
-      await expect(exchangeAuthorizationCode({
-        code: 'auth-code-1',
-        redirectUri: 'http://localhost:8734/callback',
-        clientId: 'client-id-1',
-        codeVerifier: 'verifier-1',
-      })).resolves.toMatchObject({ accessToken: 'new-access-token' });
+      await expect(
+        exchangeAuthorizationCode({
+          code: 'auth-code-1',
+          redirectUri: 'http://localhost:8734/callback',
+          clientId: 'client-id-1',
+          codeVerifier: 'verifier-1',
+        }),
+      ).resolves.toMatchObject({ accessToken: 'new-access-token' });
 
       const body = fetchSpy.mock.calls[0]?.[1]?.body as URLSearchParams;
       expect(body.has('client_secret')).toBe(false);

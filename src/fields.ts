@@ -97,7 +97,12 @@ const ISSUE_REF_QUERY = `query StrictIssueRef($id: String!) { issue(id: $id) { i
  * Turns names into ids and checks every change before anything is written,
  * so a bad label or an ambiguous user refuses the whole call.
  */
-export async function resolveFields(gql: Gql, issue: FieldTarget, viewer: Viewer, changes: FieldChanges): Promise<ResolvedFields> {
+export async function resolveFields(
+  gql: Gql,
+  issue: FieldTarget,
+  viewer: Viewer,
+  changes: FieldChanges,
+): Promise<ResolvedFields> {
   const input: Record<string, unknown> = {};
   const changed: string[] = [];
   const relations: RelationToAdd[] = [];
@@ -122,7 +127,9 @@ export async function resolveFields(gql: Gql, issue: FieldTarget, viewer: Viewer
     const target = changes.assignee === null ? null : await findUser(gql, changes.assignee, viewer);
     if (current && current.id !== viewer.id && current.id !== target?.id) {
       if (current.app) {
-        throw new Error(`${issue.identifier} is assigned to ${nameOf(current)}, another agent. Ask it to release the ticket first.`);
+        throw new Error(
+          `${issue.identifier} is assigned to ${nameOf(current)}, another agent. Ask it to release the ticket first.`,
+        );
       }
       if (!changes.take_over) {
         throw new Error(
@@ -138,7 +145,9 @@ export async function resolveFields(gql: Gql, issue: FieldTarget, viewer: Viewer
     const current = issue.delegate;
     const target = changes.delegate === null ? null : await findUser(gql, changes.delegate, viewer);
     if (current && current.id !== viewer.id && current.id !== target?.id) {
-      throw new Error(`${issue.identifier} is delegated to ${nameOf(current)}. Ask them to release it first.`);
+      throw new Error(
+        `${issue.identifier} is delegated to ${nameOf(current)}. Ask them to release it first.`,
+      );
     }
     input['delegateId'] = target?.id ?? null;
     changed.push(target ? `delegate (${nameOf(target)})` : 'delegate (cleared)');
@@ -147,28 +156,43 @@ export async function resolveFields(gql: Gql, issue: FieldTarget, viewer: Viewer
   const adding = changes.add_labels ?? [];
   const removing = changes.remove_labels ?? [];
   if (adding.length > 0 || removing.length > 0) {
-    if (!issue.team) throw new Error(`${issue.identifier} has no team, so its labels cannot be resolved`);
+    if (!issue.team)
+      throw new Error(`${issue.identifier} has no team, so its labels cannot be resolved`);
     const teamId = issue.team.id;
-    const labels = await paginate<{ id: string; name: string; isGroup: boolean }>('labels', (after) =>
-      gql<{ issueLabels: Connection<{ id: string; name: string; isGroup: boolean }> }>(LABELS_QUERY, { teamId, after }).then(
-        (data) => data.issueLabels,
-      ),
+    const labels = await paginate<{ id: string; name: string; isGroup: boolean }>(
+      'labels',
+      (after) =>
+        gql<{ issueLabels: Connection<{ id: string; name: string; isGroup: boolean }> }>(
+          LABELS_QUERY,
+          { teamId, after },
+        ).then((data) => data.issueLabels),
     );
     const [gap] = labels.omitted;
     if (gap) throw new Error(`Could not read every label to resolve names: ${gap.reason}`);
     const find = (name: string) => {
-      const matches = labels.nodes.filter((label) => label.name.toLowerCase() === name.trim().toLowerCase());
+      const matches = labels.nodes.filter(
+        (label) => label.name.toLowerCase() === name.trim().toLowerCase(),
+      );
       const [match] = matches;
-      if (!match) throw new Error(`No label "${name}" on ${issue.team?.key ?? 'this team'} or the workspace. Labels are not created here.`);
-      if (matches.length > 1) throw new Error(`"${name}" names ${String(matches.length)} labels; ask which one is meant.`);
-      if (match.isGroup) throw new Error(`"${match.name}" is a label group; pick one of the labels inside it.`);
+      if (!match)
+        throw new Error(
+          `No label "${name}" on ${issue.team?.key ?? 'this team'} or the workspace. Labels are not created here.`,
+        );
+      if (matches.length > 1)
+        throw new Error(
+          `"${name}" names ${String(matches.length)} labels; ask which one is meant.`,
+        );
+      if (match.isGroup)
+        throw new Error(`"${match.name}" is a label group; pick one of the labels inside it.`);
       return match;
     };
     const added = adding.map(find);
     const removed = removing.map(find);
     if (added.length > 0) input['addedLabelIds'] = added.map((label) => label.id);
     if (removed.length > 0) input['removedLabelIds'] = removed.map((label) => label.id);
-    changed.push(`labels (${[...added.map((label) => `+${label.name}`), ...removed.map((label) => `-${label.name}`)].join(', ')})`);
+    changed.push(
+      `labels (${[...added.map((label) => `+${label.name}`), ...removed.map((label) => `-${label.name}`)].join(', ')})`,
+    );
   }
 
   if (changes.cycle !== undefined) {
@@ -188,11 +212,16 @@ export async function resolveFields(gql: Gql, issue: FieldTarget, viewer: Viewer
               ? { ...team, number: { eq: which } }
               : null;
       if (!filter) throw new Error('cycle must be a cycle number, "current", "next", or null');
-      const { cycles } = await gql<{ cycles: { nodes: { id: string; number: number; name: string | null }[] } }>(CYCLES_QUERY, {
+      const { cycles } = await gql<{
+        cycles: { nodes: { id: string; number: number; name: string | null }[] };
+      }>(CYCLES_QUERY, {
         filter,
       });
       const [cycle] = cycles.nodes;
-      if (!cycle) throw new Error(`${issue.team.key} has no ${typeof which === 'number' ? `cycle ${String(which)}` : `${which} cycle`}. list_cycles shows them.`);
+      if (!cycle)
+        throw new Error(
+          `${issue.team.key} has no ${typeof which === 'number' ? `cycle ${String(which)}` : `${which} cycle`}. list_cycles shows them.`,
+        );
       input['cycleId'] = cycle.id;
       changed.push(`cycle (${String(cycle.number)}${cycle.name ? ` ${cycle.name}` : ''})`);
     }
@@ -206,12 +235,19 @@ export async function resolveFields(gql: Gql, issue: FieldTarget, viewer: Viewer
       changed.push('project (cleared)');
     } else {
       const wanted = changes.project.trim();
-      const filter = UUID.test(wanted) ? { id: { eq: wanted } } : { name: { eqIgnoreCase: wanted } };
-      const { projects } = await gql<{ projects: { nodes: { id: string; name: string }[] } }>(PROJECTS_QUERY, { filter });
+      const filter = UUID.test(wanted)
+        ? { id: { eq: wanted } }
+        : { name: { eqIgnoreCase: wanted } };
+      const { projects } = await gql<{ projects: { nodes: { id: string; name: string }[] } }>(
+        PROJECTS_QUERY,
+        { filter },
+      );
       const [project] = projects.nodes;
       if (!project) throw new Error(`No project "${wanted}". list_projects shows them.`);
       if (projects.nodes.length > 1) {
-        throw new Error(`"${wanted}" names ${String(projects.nodes.length)} projects; pass the id. ${projects.nodes.map((p) => `${p.name} ${p.id}`).join('; ')}`);
+        throw new Error(
+          `"${wanted}" names ${String(projects.nodes.length)} projects; pass the id. ${projects.nodes.map((p) => `${p.name} ${p.id}`).join('; ')}`,
+        );
       }
       input['projectId'] = project.id;
       projectId = project.id;
@@ -224,13 +260,19 @@ export async function resolveFields(gql: Gql, issue: FieldTarget, viewer: Viewer
       input['projectMilestoneId'] = null;
       changed.push('milestone (cleared)');
     } else {
-      if (!projectId) throw new Error(`${issue.identifier} is in no project, so it has no milestones. Set project in the same call.`);
-      const { projectMilestones } = await gql<{ projectMilestones: { nodes: { id: string; name: string }[] } }>(MILESTONES_QUERY, {
+      if (!projectId)
+        throw new Error(
+          `${issue.identifier} is in no project, so it has no milestones. Set project in the same call.`,
+        );
+      const { projectMilestones } = await gql<{
+        projectMilestones: { nodes: { id: string; name: string }[] };
+      }>(MILESTONES_QUERY, {
         projectId,
         name: changes.milestone.trim(),
       });
       const [milestone] = projectMilestones.nodes;
-      if (!milestone) throw new Error(`No milestone "${changes.milestone}" in the ticket's project.`);
+      if (!milestone)
+        throw new Error(`No milestone "${changes.milestone}" in the ticket's project.`);
       input['projectMilestoneId'] = milestone.id;
       changed.push(`milestone (${milestone.name})`);
     }
@@ -249,7 +291,10 @@ export async function resolveFields(gql: Gql, issue: FieldTarget, viewer: Viewer
   }
 
   if (changes.due_date !== undefined) {
-    if (changes.due_date !== null && (!/^\d{4}-\d{2}-\d{2}$/.test(changes.due_date) || Number.isNaN(Date.parse(changes.due_date)))) {
+    if (
+      changes.due_date !== null &&
+      (!/^\d{4}-\d{2}-\d{2}$/.test(changes.due_date) || Number.isNaN(Date.parse(changes.due_date)))
+    ) {
       throw new Error('due_date must be YYYY-MM-DD, or null to clear it');
     }
     input['dueDate'] = changes.due_date;
@@ -257,11 +302,16 @@ export async function resolveFields(gql: Gql, issue: FieldTarget, viewer: Viewer
   }
 
   if (changes.estimate !== undefined) {
-    if (changes.estimate !== null && (!Number.isInteger(changes.estimate) || changes.estimate < 0)) {
+    if (
+      changes.estimate !== null &&
+      (!Number.isInteger(changes.estimate) || changes.estimate < 0)
+    ) {
       throw new Error('estimate must be a non-negative integer, or null to clear it');
     }
     input['estimate'] = changes.estimate;
-    changed.push(changes.estimate === null ? 'estimate (cleared)' : `estimate (${String(changes.estimate)})`);
+    changed.push(
+      changes.estimate === null ? 'estimate (cleared)' : `estimate (${String(changes.estimate)})`,
+    );
   }
 
   const links: [string[] | undefined, 'related_to' | 'blocks' | 'blocked_by'][] = [
@@ -275,7 +325,12 @@ export async function resolveFields(gql: Gql, issue: FieldTarget, viewer: Viewer
       if (other.id === issue.id) throw new Error(`${kind} names this same ticket`);
       if (kind === 'blocked_by') {
         // Linear reads a blocks relation as "issueId blocks relatedIssueId".
-        relations.push({ issueId: other.id, relatedIssueId: issue.id, type: 'blocks', label: `blocked by ${other.identifier}` });
+        relations.push({
+          issueId: other.id,
+          relatedIssueId: issue.id,
+          type: 'blocks',
+          label: `blocked by ${other.identifier}`,
+        });
       } else {
         relations.push({
           issueId: issue.id,
@@ -288,7 +343,9 @@ export async function resolveFields(gql: Gql, issue: FieldTarget, viewer: Viewer
   }
 
   if (changed.length === 0 && relations.length === 0) {
-    throw new Error('Pass at least one field to change. The description changes through set_state, and the workflow state through set_status.');
+    throw new Error(
+      'Pass at least one field to change. The description changes through set_state, and the workflow state through set_status.',
+    );
   }
   return { input, changed, relations };
 }
@@ -299,22 +356,37 @@ export async function findUser(
   viewer: Viewer,
 ): Promise<UserNode | { id: string; name: string; displayName: string; url?: undefined }> {
   const wanted = ref.trim();
-  if (wanted.toLowerCase() === 'me') return { id: viewer.id, name: viewer.name, displayName: viewer.name };
+  if (wanted.toLowerCase() === 'me')
+    return { id: viewer.id, name: viewer.name, displayName: viewer.name };
   const filter = UUID.test(wanted)
     ? { id: { eq: wanted } }
-    : { or: [{ name: { eqIgnoreCase: wanted } }, { displayName: { eqIgnoreCase: wanted } }, { email: { eqIgnoreCase: wanted } }] };
+    : {
+        or: [
+          { name: { eqIgnoreCase: wanted } },
+          { displayName: { eqIgnoreCase: wanted } },
+          { email: { eqIgnoreCase: wanted } },
+        ],
+      };
   const { users } = await gql<{ users: { nodes: UserNode[] } }>(USERS_QUERY, { filter });
   const active = users.nodes.filter((user) => user.active);
   const [user] = active;
-  if (!user) throw new Error(`No active user "${wanted}". Use a name, display name or email as Linear shows it.`);
+  if (!user)
+    throw new Error(
+      `No active user "${wanted}". Use a name, display name or email as Linear shows it.`,
+    );
   if (active.length > 1) {
-    throw new Error(`"${wanted}" matches ${String(active.length)} users: ${active.map((u) => `${nameOf(u)} <${u.email ?? u.id}>`).join(', ')}. Pass the email.`);
+    throw new Error(
+      `"${wanted}" matches ${String(active.length)} users: ${active.map((u) => `${nameOf(u)} <${u.email ?? u.id}>`).join(', ')}. Pass the email.`,
+    );
   }
   return user;
 }
 
 async function findIssue(gql: Gql, ref: string) {
-  const { issue } = await gql<{ issue: { id: string; identifier: string } | null }>(ISSUE_REF_QUERY, { id: ref.trim() });
+  const { issue } = await gql<{ issue: { id: string; identifier: string } | null }>(
+    ISSUE_REF_QUERY,
+    { id: ref.trim() },
+  );
   if (!issue) throw new Error(`Issue ${ref} not found`);
   return issue;
 }

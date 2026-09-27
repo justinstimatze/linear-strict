@@ -1,7 +1,12 @@
 import type { FieldChanges } from './fields.js';
 import type { SectionPatch } from './sections.js';
 import { IMPACT, PATCHABLE_SECTIONS } from './sections.js';
-import { type Accounting, COMMENT_KINDS, type CommentKind, type StrictLinear } from './strict-linear.js';
+import {
+  type Accounting,
+  COMMENT_KINDS,
+  type CommentKind,
+  type StrictLinear,
+} from './strict-linear.js';
 import { CYCLE_WHEN, type CycleWhen } from './workspace.js';
 
 /**
@@ -33,11 +38,26 @@ export interface MCPToolDefinition {
   meta?: Record<string, unknown>;
 }
 
-const READ: ToolAnnotations = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
+const READ: ToolAnnotations = {
+  readOnlyHint: true,
+  destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: false,
+};
 // destructiveHint follows the MCP spec: true when a call can overwrite what is there,
 // not only delete it. A section patch in replace mode, a state move and a claim all can.
-const ADDS: ToolAnnotations = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
-const OVERWRITES: ToolAnnotations = { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false };
+const ADDS: ToolAnnotations = {
+  readOnlyHint: false,
+  destructiveHint: false,
+  idempotentHint: false,
+  openWorldHint: false,
+};
+const OVERWRITES: ToolAnnotations = {
+  readOnlyHint: false,
+  destructiveHint: true,
+  idempotentHint: false,
+  openWorldHint: false,
+};
 const OVERWRITES_IDEMPOTENT: ToolAnnotations = { ...OVERWRITES, idempotentHint: true };
 const ANY_OBJECT = { type: 'object' };
 
@@ -59,15 +79,24 @@ const PAGE_FIELDS = {
 } satisfies Record<string, [string | string[], string]>;
 
 const GET_ISSUE_OUTPUT = shape({
-  issue: ['object', 'Full description and fields, description_sha (pass it as base when you patch the description), and open_questions parsed from the description'],
-  comments: ['array', 'Every comment, oldest first, each with author_kind (agent or person) and its basis'],
+  issue: [
+    'object',
+    'Full description and fields, description_sha (pass it as base when you patch the description), and open_questions parsed from the description',
+  ],
+  comments: [
+    'array',
+    'Every comment, oldest first, each with author_kind (agent or person) and its basis',
+  ],
   comment_order: ['string', 'Always oldest first'],
   description_edits: ['array', 'Who changed the description and when, oldest first'],
   relations: ['array', 'Blocks, duplicates and related tickets, both directions'],
   children: ['array', 'Sub-issues'],
   pull_requests: ['array', 'Linked GitHub PRs with status, target branch and merge time'],
   attachments: ['array', 'Other attachments'],
-  claim: [['object', 'null'], "Your claim on this ticket and whether the description changed since"],
+  claim: [
+    ['object', 'null'],
+    'Your claim on this ticket and whether the description changed since',
+  ],
   findings: ['array', 'Format and shipped-state problems to fix with set_state'],
   drift: ['object', 'Comments after the reconciled marker, needs_reconcile and next_step'],
   omitted: ['array', 'Anything not fetched, with the reason; empty means nothing was left out'],
@@ -78,7 +107,10 @@ const LIST_ISSUES_OUTPUT = shape({
   complete: ['boolean', 'Always true: a partial set is refused, never returned'],
   by_state: ['object', 'Count of matching tickets per workflow state'],
   columns: ['array', 'Names of the values in each row, in order'],
-  rows: ['array', 'One array per ticket: identifier, title, state, assignee, delegate, updatedAt; no descriptions'],
+  rows: [
+    'array',
+    'One array per ticket: identifier, title, state, assignee, delegate, updatedAt; no descriptions',
+  ],
 });
 
 const NOTIFICATIONS_OUTPUT = shape({
@@ -131,7 +163,10 @@ export const strictToolDefinitions: MCPToolDefinition[] = [
       type: 'object',
       properties: {
         issue: ISSUE_ARG,
-        blame: { type: 'boolean', description: 'Also attribute each current line to the version that introduced it' },
+        blame: {
+          type: 'boolean',
+          description: 'Also attribute each current line to the version that introduced it',
+        },
       },
       required: ['issue'],
     },
@@ -146,12 +181,19 @@ export const strictToolDefinitions: MCPToolDefinition[] = [
     input_schema: {
       type: 'object',
       properties: {
-        query: { type: 'string', description: 'Full-text search term. Omit to list by most recently updated.' },
+        query: {
+          type: 'string',
+          description: 'Full-text search term. Omit to list by most recently updated.',
+        },
         team: { type: 'string', description: 'Team key, e.g. ENG' },
         state: { type: 'string', description: 'Workflow state name, e.g. "In Progress"' },
         assignee_is_me: { type: 'boolean' },
         delegate_is_me: { type: 'boolean' },
-        cycle: { type: 'integer', minimum: 1, description: 'Cycle number within team (list_cycles gives them); needs team' },
+        cycle: {
+          type: 'integer',
+          minimum: 1,
+          description: 'Cycle number within team (list_cycles gives them); needs team',
+        },
         project: { type: 'string', description: 'Project name or id' },
         open: { type: 'boolean', description: 'Only tickets not in a completed or canceled state' },
       },
@@ -176,7 +218,8 @@ export const strictToolDefinitions: MCPToolDefinition[] = [
   },
   {
     name: 'list_teams',
-    description: 'Every team with its key and workflow states in board order. State names are what set_status takes.',
+    description:
+      'Every team with its key and workflow states in board order. State names are what set_status takes.',
     input_schema: { type: 'object', properties: {} },
     output_schema: ANY_OBJECT,
     annotations: READ,
@@ -189,7 +232,11 @@ export const strictToolDefinitions: MCPToolDefinition[] = [
       type: 'object',
       properties: {
         team: { type: 'string', description: 'Team key; omit for every team' },
-        when: { type: 'string', enum: [...CYCLE_WHEN], description: 'current (active and next, default), upcoming, past or all' },
+        when: {
+          type: 'string',
+          enum: [...CYCLE_WHEN],
+          description: 'current (active and next, default), upcoming, past or all',
+        },
       },
     },
     output_schema: ANY_OBJECT,
@@ -197,7 +244,8 @@ export const strictToolDefinitions: MCPToolDefinition[] = [
   },
   {
     name: 'list_projects',
-    description: 'Projects with status, lead, teams, dates and progress. Open projects only unless include_closed.',
+    description:
+      'Projects with status, lead, teams, dates and progress. Open projects only unless include_closed.',
     input_schema: {
       type: 'object',
       properties: {
@@ -210,10 +258,13 @@ export const strictToolDefinitions: MCPToolDefinition[] = [
   },
   {
     name: 'list_initiatives',
-    description: 'Initiatives with status, owner and target date. Unfinished ones only unless include_closed.',
+    description:
+      'Initiatives with status, owner and target date. Unfinished ones only unless include_closed.',
     input_schema: {
       type: 'object',
-      properties: { include_closed: { type: 'boolean', description: 'Include completed initiatives' } },
+      properties: {
+        include_closed: { type: 'boolean', description: 'Include completed initiatives' },
+      },
     },
     output_schema: ANY_OBJECT,
     annotations: READ,
@@ -226,8 +277,16 @@ export const strictToolDefinitions: MCPToolDefinition[] = [
       type: 'object',
       properties: {
         unread_only: { type: 'boolean', description: 'Default true' },
-        since: { type: 'string', description: 'Only notifications created on or after this date, e.g. 2026-09-24' },
-        first: { type: 'integer', minimum: 1, maximum: 100, description: 'How many to return, default 50' },
+        since: {
+          type: 'string',
+          description: 'Only notifications created on or after this date, e.g. 2026-09-24',
+        },
+        first: {
+          type: 'integer',
+          minimum: 1,
+          maximum: 100,
+          description: 'How many to return, default 50',
+        },
         after: { type: 'string', description: 'next_cursor from the previous call' },
       },
     },
@@ -239,11 +298,23 @@ export const strictToolDefinitions: MCPToolDefinition[] = [
     description: 'Mark notifications read once you have handled them. Reports each id separately.',
     input_schema: {
       type: 'object',
-      properties: { ids: { type: 'array', items: { type: 'string' }, minItems: 1, description: 'Ids from notifications' } },
+      properties: {
+        ids: {
+          type: 'array',
+          items: { type: 'string' },
+          minItems: 1,
+          description: 'Ids from notifications',
+        },
+      },
       required: ['ids'],
     },
     output_schema: ANY_OBJECT,
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: 'claim',
@@ -253,10 +324,15 @@ export const strictToolDefinitions: MCPToolDefinition[] = [
       type: 'object',
       properties: {
         issue: ISSUE_ARG,
-        as: { type: 'string', enum: ['assignee', 'delegate'], description: 'Override the automatic choice' },
+        as: {
+          type: 'string',
+          enum: ['assignee', 'delegate'],
+          description: 'Override the automatic choice',
+        },
         take_over: {
           type: 'boolean',
-          description: 'Take the assignment from the person who holds it. Only when they handed it to you; a ticket held by another agent is never taken.',
+          description:
+            'Take the assignment from the person who holds it. Only when they handed it to you; a ticket held by another agent is never taken.',
         },
       },
       required: ['issue'],
@@ -282,7 +358,10 @@ export const strictToolDefinitions: MCPToolDefinition[] = [
         issue: ISSUE_ARG,
         patch: PATCH_SCHEMA,
         base: BASE_ARG,
-        reconciled_through: { type: 'string', description: 'Id of the newest comment the description now reflects' },
+        reconciled_through: {
+          type: 'string',
+          description: 'Id of the newest comment the description now reflects',
+        },
         descope_risk: {
           type: 'string',
           description:
@@ -330,16 +409,23 @@ export const strictToolDefinitions: MCPToolDefinition[] = [
       properties: {
         issue: ISSUE_ARG,
         kind: { type: 'string', enum: [...COMMENT_KINDS] },
-        body: { type: 'string', description: 'Comment text. For ask, the first line becomes the question row.' },
+        body: {
+          type: 'string',
+          description: 'Comment text. For ask, the first line becomes the question row.',
+        },
         patch: PATCH_SCHEMA,
         base: { ...BASE_ARG, description: `Required with patch. ${BASE_ARG.description}` },
         answers: { type: 'string', description: 'For kind answer: the question id, e.g. Q3' },
         ask_to: { type: 'string', description: 'For kind ask: who should answer' },
-        closed_by: { type: 'string', description: 'For kind closed_by: the ticket that carried the work' },
+        closed_by: {
+          type: 'string',
+          description: 'For kind closed_by: the ticket that carried the work',
+        },
         relation: {
           type: 'string',
           enum: ['duplicate', 'fixed_there'],
-          description: 'For kind closed_by: duplicate (same problem) or fixed_there (a different ticket whose change fixed this one)',
+          description:
+            'For kind closed_by: duplicate (same problem) or fixed_there (a different ticket whose change fixed this one)',
         },
         author_label: {
           type: 'string',
@@ -361,7 +447,11 @@ export const strictToolDefinitions: MCPToolDefinition[] = [
       properties: {
         issue: ISSUE_ARG,
         state: { type: 'string', description: 'Workflow state name' },
-        reason: { type: 'string', description: 'Why the work stops. Required for a canceled state, optional otherwise; posted as a comment.' },
+        reason: {
+          type: 'string',
+          description:
+            'Why the work stops. Required for a canceled state, optional otherwise; posted as a comment.',
+        },
       },
       required: ['issue', 'state'],
     },
@@ -378,20 +468,52 @@ export const strictToolDefinitions: MCPToolDefinition[] = [
         issue: ISSUE_ARG,
         title: { type: 'string' },
         priority: { type: 'integer', description: '0 none, 1 urgent, 2 high, 3 medium, 4 low' },
-        assignee: { type: ['string', 'null'], description: 'Name, display name, email or id, "me", or null to unassign' },
-        delegate: { type: ['string', 'null'], description: 'Agent (app) user to delegate to, "me", or null to clear' },
-        take_over: { type: 'boolean', description: "Required to change a person's assignment to someone else" },
-        add_labels: { type: 'array', items: { type: 'string' }, description: 'Label names on the team or workspace. Labels are not created here.' },
+        assignee: {
+          type: ['string', 'null'],
+          description: 'Name, display name, email or id, "me", or null to unassign',
+        },
+        delegate: {
+          type: ['string', 'null'],
+          description: 'Agent (app) user to delegate to, "me", or null to clear',
+        },
+        take_over: {
+          type: 'boolean',
+          description: "Required to change a person's assignment to someone else",
+        },
+        add_labels: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Label names on the team or workspace. Labels are not created here.',
+        },
         remove_labels: { type: 'array', items: { type: 'string' } },
-        cycle: { type: ['integer', 'string', 'null'], description: 'Cycle number, "current", "next", or null to remove it from its cycle' },
+        cycle: {
+          type: ['integer', 'string', 'null'],
+          description: 'Cycle number, "current", "next", or null to remove it from its cycle',
+        },
         project: { type: ['string', 'null'], description: 'Project name or id, or null' },
-        milestone: { type: ['string', 'null'], description: "Milestone name in the ticket's project (or the project set in this call), or null" },
+        milestone: {
+          type: ['string', 'null'],
+          description:
+            "Milestone name in the ticket's project (or the project set in this call), or null",
+        },
         parent: { type: ['string', 'null'], description: 'Parent issue identifier, or null' },
         due_date: { type: ['string', 'null'], description: 'YYYY-MM-DD, or null' },
         estimate: { type: ['integer', 'null'] },
-        related_to: { type: 'array', items: { type: 'string' }, description: 'Issue identifiers to mark as related' },
-        blocks: { type: 'array', items: { type: 'string' }, description: 'Issue identifiers this ticket blocks' },
-        blocked_by: { type: 'array', items: { type: 'string' }, description: 'Issue identifiers that block this ticket' },
+        related_to: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Issue identifiers to mark as related',
+        },
+        blocks: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Issue identifiers this ticket blocks',
+        },
+        blocked_by: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Issue identifiers that block this ticket',
+        },
       },
       required: ['issue'],
     },
@@ -423,7 +545,8 @@ type Args = Record<string, unknown>;
 function opt(args: Args, key: string): string | undefined {
   const value = args[key];
   if (value === undefined || value === null) return undefined;
-  if (typeof value !== 'string' || value.trim() === '') throw new Error(`${key} must be a non-empty string`);
+  if (typeof value !== 'string' || value.trim() === '')
+    throw new Error(`${key} must be a non-empty string`);
   return value;
 }
 
@@ -446,7 +569,8 @@ function baseArg(args: Args): string {
 
 function relationArg(args: Args): 'duplicate' | 'fixed_there' | undefined {
   const relation = opt(args, 'relation');
-  if (relation === undefined || relation === 'duplicate' || relation === 'fixed_there') return relation;
+  if (relation === undefined || relation === 'duplicate' || relation === 'fixed_there')
+    return relation;
   throw new Error('relation must be "duplicate" or "fixed_there"');
 }
 
@@ -467,7 +591,8 @@ function patches(args: Args, key: string): SectionPatch[] | undefined {
     if (typeof section !== 'string' || typeof mode !== 'string' || typeof body !== 'string') {
       throw new Error(`${key}[${index}] needs string section, mode and body`);
     }
-    if (mode !== 'replace' && mode !== 'append') throw new Error(`${key}[${index}].mode must be "replace" or "append"`);
+    if (mode !== 'replace' && mode !== 'append')
+      throw new Error(`${key}[${index}].mode must be "replace" or "append"`);
     return { section, mode, body };
   });
 }
@@ -475,12 +600,15 @@ function patches(args: Args, key: string): SectionPatch[] | undefined {
 function accountsFor(args: Args): Accounting[] {
   const value = args['accounts_for'];
   if (value === undefined || value === null) return [];
-  if (!Array.isArray(value)) throw new Error('accounts_for must be a list of {comment, how, reason?}');
+  if (!Array.isArray(value))
+    throw new Error('accounts_for must be a list of {comment, how, reason?}');
   return value.map((entry: unknown, index) => {
-    if (!entry || typeof entry !== 'object') throw new Error(`accounts_for[${String(index)}] must be an object`);
+    if (!entry || typeof entry !== 'object')
+      throw new Error(`accounts_for[${String(index)}] must be an object`);
     const item = entry as Args;
     const how = req(item, 'how');
-    if (how !== 'folded' && how !== 'no_state_change') throw new Error(`accounts_for[${String(index)}].how must be folded or no_state_change`);
+    if (how !== 'folded' && how !== 'no_state_change')
+      throw new Error(`accounts_for[${String(index)}].how must be folded or no_state_change`);
     return { comment: req(item, 'comment'), how, reason: opt(item, 'reason') };
   });
 }
@@ -488,7 +616,8 @@ function accountsFor(args: Args): Accounting[] {
 function int(args: Args, key: string): number | undefined {
   const value = args[key];
   if (value === undefined || value === null) return undefined;
-  if (typeof value !== 'number' || !Number.isInteger(value)) throw new Error(`${key} must be an integer`);
+  if (typeof value !== 'number' || !Number.isInteger(value))
+    throw new Error(`${key} must be an integer`);
   return value;
 }
 
@@ -502,14 +631,21 @@ function bool(args: Args, key: string): boolean | undefined {
 function strings(args: Args, key: string): string[] | undefined {
   const value = args[key];
   if (value === undefined || value === null) return undefined;
-  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string' || item.trim() === '')) {
+  if (
+    !Array.isArray(value) ||
+    value.some((item) => typeof item !== 'string' || item.trim() === '')
+  ) {
     throw new Error(`${key} must be a list of non-empty strings`);
   }
   return value as string[];
 }
 
 /** A value that may be null to clear the field: undefined means leave it alone. */
-function clearable<T>(args: Args, key: string, parse: (args: Args, key: string) => T | undefined): T | null | undefined {
+function clearable<T>(
+  args: Args,
+  key: string,
+  parse: (args: Args, key: string) => T | undefined,
+): T | null | undefined {
   if (!(key in args)) return undefined;
   if (args[key] === null) return null;
   return parse(args, key);
@@ -545,7 +681,9 @@ function fieldChanges(args: Args): FieldChanges {
   };
 }
 
-export function strictToolHandlers(strict: StrictLinear): Record<string, (raw: unknown) => Promise<unknown>> {
+export function strictToolHandlers(
+  strict: StrictLinear,
+): Record<string, (raw: unknown) => Promise<unknown>> {
   const withArgs =
     (fn: (args: Args) => Promise<unknown>) =>
     (raw: unknown): Promise<unknown> => {
@@ -555,7 +693,9 @@ export function strictToolHandlers(strict: StrictLinear): Record<string, (raw: u
 
   return {
     get_issue: withArgs((args) => strict.getIssue(req(args, 'issue'))),
-    description_history: withArgs((args) => strict.descriptionHistory(req(args, 'issue'), { blame: bool(args, 'blame') })),
+    description_history: withArgs((args) =>
+      strict.descriptionHistory(req(args, 'issue'), { blame: bool(args, 'blame') }),
+    ),
     list_issues: withArgs((args) =>
       strict.listIssues({
         query: opt(args, 'query'),
@@ -575,12 +715,20 @@ export function strictToolHandlers(strict: StrictLinear): Record<string, (raw: u
       if (when !== undefined && !(CYCLE_WHEN as readonly string[]).includes(when)) {
         throw new Error(`when must be one of ${CYCLE_WHEN.join(', ')}`);
       }
-      return strict.workspace.listCycles({ team: opt(args, 'team'), when: when as CycleWhen | undefined });
+      return strict.workspace.listCycles({
+        team: opt(args, 'team'),
+        when: when as CycleWhen | undefined,
+      });
     }),
     list_projects: withArgs((args) =>
-      strict.workspace.listProjects({ team: opt(args, 'team'), include_closed: bool(args, 'include_closed') }),
+      strict.workspace.listProjects({
+        team: opt(args, 'team'),
+        include_closed: bool(args, 'include_closed'),
+      }),
     ),
-    list_initiatives: withArgs((args) => strict.workspace.listInitiatives({ include_closed: bool(args, 'include_closed') })),
+    list_initiatives: withArgs((args) =>
+      strict.workspace.listInitiatives({ include_closed: bool(args, 'include_closed') }),
+    ),
     notifications: withArgs((args) =>
       strict.workspace.notifications({
         unread_only: bool(args, 'unread_only'),
@@ -591,14 +739,18 @@ export function strictToolHandlers(strict: StrictLinear): Record<string, (raw: u
     ),
     mark_notifications_read: withArgs((args) => {
       const ids = args['ids'];
-      if (!Array.isArray(ids) || !ids.every((id): id is string => typeof id === 'string' && id !== '')) {
+      if (
+        !Array.isArray(ids) ||
+        !ids.every((id): id is string => typeof id === 'string' && id !== '')
+      ) {
         throw new Error('ids must be a list of notification ids from the notifications tool');
       }
       return strict.workspace.markNotificationsRead(ids);
     }),
     claim: withArgs((args) => {
       const as = opt(args, 'as');
-      if (as !== undefined && as !== 'assignee' && as !== 'delegate') throw new Error('as must be assignee or delegate');
+      if (as !== undefined && as !== 'assignee' && as !== 'delegate')
+        throw new Error('as must be assignee or delegate');
       return strict.claim(req(args, 'issue'), { as, take_over: bool(args, 'take_over') });
     }),
     check_claim: withArgs((args) => strict.checkClaim(req(args, 'issue'))),
@@ -628,7 +780,9 @@ export function strictToolHandlers(strict: StrictLinear): Record<string, (raw: u
         author_label: opt(args, 'author_label'),
       });
     }),
-    set_status: withArgs((args) => strict.setStatus(req(args, 'issue'), req(args, 'state'), opt(args, 'reason'))),
+    set_status: withArgs((args) =>
+      strict.setStatus(req(args, 'issue'), req(args, 'state'), opt(args, 'reason')),
+    ),
     set_fields: withArgs((args) => strict.setFields(req(args, 'issue'), fieldChanges(args))),
     create_issue: withArgs((args) =>
       strict.createIssue({

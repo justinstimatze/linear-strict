@@ -56,7 +56,9 @@ async function postTokenRequest(body: URLSearchParams): Promise<OAuthTokens> {
     throw new Error('Linear OAuth token response was incomplete');
   }
 
-  const record = payload as Partial<Record<'access_token' | 'scope' | 'refresh_token' | 'expires_in', unknown>>;
+  const record = payload as Partial<
+    Record<'access_token' | 'scope' | 'refresh_token' | 'expires_in', unknown>
+  >;
   const accessToken = record.access_token;
   if (typeof accessToken !== 'string' || accessToken.trim().length === 0) {
     throw new Error('Linear OAuth token response was incomplete');
@@ -94,7 +96,9 @@ function parseScopes(scope: unknown): string[] {
 /**
  * Exchange an authorization code (with its PKCE verifier) for tokens.
  */
-export function exchangeAuthorizationCode(args: AuthorizationCodeExchangeArgs): Promise<OAuthTokens> {
+export function exchangeAuthorizationCode(
+  args: AuthorizationCodeExchangeArgs,
+): Promise<OAuthTokens> {
   const body = new URLSearchParams({
     grant_type: 'authorization_code',
     code: args.code,
@@ -103,9 +107,7 @@ export function exchangeAuthorizationCode(args: AuthorizationCodeExchangeArgs): 
     code_verifier: args.codeVerifier,
   });
   if (args.clientSecret) body.set('client_secret', args.clientSecret);
-  return postTokenRequest(
-    body,
-  );
+  return postTokenRequest(body);
 }
 
 /**
@@ -119,9 +121,7 @@ export function refreshAccessToken(args: RefreshTokenArgs): Promise<OAuthTokens>
     client_id: args.clientId,
   });
   if (args.clientSecret) body.set('client_secret', args.clientSecret);
-  return postTokenRequest(
-    body,
-  );
+  return postTokenRequest(body);
 }
 
 /**

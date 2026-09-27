@@ -1,5 +1,10 @@
 import { createHash } from 'node:crypto';
-import type { ClientCapabilities, ElicitRequestFormParams, ElicitResult, Implementation } from '@modelcontextprotocol/sdk/types.js';
+import type {
+  ClientCapabilities,
+  ElicitRequestFormParams,
+  ElicitResult,
+  Implementation,
+} from '@modelcontextprotocol/sdk/types.js';
 import { type AskQuestion, type SignOffStore, newToken } from './sign-off-store.js';
 import type { SignOffAnswer, SignOffRequest } from './strict-linear.js';
 
@@ -7,7 +12,10 @@ import type { SignOffAnswer, SignOffRequest } from './strict-linear.js';
 export interface Elicitor {
   getClientCapabilities(): ClientCapabilities | undefined;
   getClientVersion?(): Implementation | undefined;
-  elicitInput(params: ElicitRequestFormParams, options?: { timeout?: number }): Promise<ElicitResult>;
+  elicitInput(
+    params: ElicitRequestFormParams,
+    options?: { timeout?: number },
+  ): Promise<ElicitResult>;
 }
 
 /**
@@ -69,14 +77,19 @@ const CONTINUED = '↳';
  * the ticket, each check in full and what replaces it, then why the agent
  * wants it and what approving gives up, then room for the person to answer.
  */
-export function signOffRows(request: Pick<SignOffRequest, 'title' | 'dropped' | 'added' | 'reason' | 'risk'>): Row[] {
+export function signOffRows(
+  request: Pick<SignOffRequest, 'title' | 'dropped' | 'added' | 'reason' | 'risk'>,
+): Row[] {
   const rows: Row[] = [];
   const push = (title: string, text: string) => {
-    wrap(text).forEach((line, index) => rows.push({ title: index === 0 ? title : CONTINUED, text: line }));
+    wrap(text).forEach((line, index) =>
+      rows.push({ title: index === 0 ? title : CONTINUED, text: line }),
+    );
   };
   push('Ticket', request.title);
   const count = Math.max(request.dropped.length, request.added.length);
-  const numbered = (label: string, index: number) => (count > 1 ? `${label} ${String(index + 1)}` : label);
+  const numbered = (label: string, index: number) =>
+    count > 1 ? `${label} ${String(index + 1)}` : label;
   for (let index = 0; index < count; index += 1) {
     const dropped = request.dropped[index];
     const added = request.added[index];
@@ -92,7 +105,10 @@ export function signOffRows(request: Pick<SignOffRequest, 'title' | 'dropped' | 
   }
   push('Why the agent wants it', request.reason);
   push('If you accept', request.risk);
-  push('Your note (optional)', 'Write what should change instead and press Decline, or leave a note with an approval.');
+  push(
+    'Your note (optional)',
+    'Write what should change instead and press Decline, or leave a note with an approval.',
+  );
   return rows;
 }
 
@@ -100,12 +116,16 @@ export function signOffRows(request: Pick<SignOffRequest, 'title' | 'dropped' | 
 const PREVIEW_WIDTH = 60;
 
 /** The change as one block of labelled, wrapped text, for AskUserQuestion's preview box. */
-export function previewText(request: Pick<SignOffRequest, 'title' | 'dropped' | 'added' | 'reason' | 'risk'>): string {
+export function previewText(
+  request: Pick<SignOffRequest, 'title' | 'dropped' | 'added' | 'reason' | 'risk'>,
+): string {
   const blocks: string[] = [];
-  const block = (label: string, text: string) => blocks.push([label, ...wrap(text, PREVIEW_WIDTH).map((line) => `  ${line}`)].join('\n'));
+  const block = (label: string, text: string) =>
+    blocks.push([label, ...wrap(text, PREVIEW_WIDTH).map((line) => `  ${line}`)].join('\n'));
   block('Ticket', request.title);
   const count = Math.max(request.dropped.length, request.added.length);
-  const numbered = (label: string, index: number) => (count > 1 ? `${label} ${String(index + 1)}` : label);
+  const numbered = (label: string, index: number) =>
+    count > 1 ? `${label} ${String(index + 1)}` : label;
   for (let index = 0; index < count; index += 1) {
     const dropped = request.dropped[index];
     const added = request.added[index];
@@ -123,14 +143,28 @@ export const DECLINE = 'Decline';
 
 /** The question a sign-off asks, with its token at the end so the hooks can find it. */
 export function signOffQuestion(request: SignOffRequest, token: string): AskQuestion {
-  const kept = request.dropped.map((item) => wrap(item, PREVIEW_WIDTH).map((line) => `  ${line}`).join('\n')).join('\n\n');
+  const kept = request.dropped
+    .map((item) =>
+      wrap(item, PREVIEW_WIDTH)
+        .map((line) => `  ${line}`)
+        .join('\n'),
+    )
+    .join('\n\n');
   return {
     question: `${request.identifier}: approve this Done when change? (sign-off ${token})`,
     header: 'Sign-off',
     multiSelect: false,
     options: [
-      { label: ACCEPT, description: 'Approve the change exactly as shown.', preview: previewText(request) },
-      { label: DECLINE, description: 'Keep the check. Or choose Other and say what should change instead.', preview: `Nothing is written. The check stays:\n\n${kept}` },
+      {
+        label: ACCEPT,
+        description: 'Approve the change exactly as shown.',
+        preview: previewText(request),
+      },
+      {
+        label: DECLINE,
+        description: 'Keep the check. Or choose Other and say what should change instead.',
+        preview: `Nothing is written. The check stays:\n\n${kept}`,
+      },
     ],
   };
 }
@@ -138,7 +172,9 @@ export function signOffQuestion(request: SignOffRequest, token: string): AskQues
 /** A hash of what is being approved, so an answer can't be carried over to a different change. */
 function bindingOf(request: SignOffRequest) {
   const { identifier, dropped, added, reason, risk } = request;
-  return createHash('sha256').update(JSON.stringify({ identifier, dropped, added, reason, risk })).digest('hex');
+  return createHash('sha256')
+    .update(JSON.stringify({ identifier, dropped, added, reason, risk }))
+    .digest('hex');
 }
 
 function askInstructions(ask: AskQuestion, token: string) {
@@ -163,7 +199,13 @@ export function previewSignOff(store: SignOffStore, now: () => Date = () => new 
     const issue = (lead: string): SignOffAnswer => {
       const token = newToken();
       const ask = signOffQuestion(request, token);
-      store.put({ token, identifier: request.identifier, binding, ask, created: now().toISOString() });
+      store.put({
+        token,
+        identifier: request.identifier,
+        binding,
+        ask,
+        created: now().toISOString(),
+      });
       return { outcome: 'pending', instructions: `${lead}${askInstructions(ask, token)}` };
     };
     const token = request.token;
@@ -171,7 +213,9 @@ export function previewSignOff(store: SignOffStore, now: () => Date = () => new 
     const pending = store.get(token);
     if (pending?.binding !== binding) {
       return Promise.resolve(
-        issue(`sign_off ${token} doesn't match this change: it was issued for a different patch, reason or risk, or it was already used. A new question is issued below.\n\n`),
+        issue(
+          `sign_off ${token} doesn't match this change: it was issued for a different patch, reason or risk, or it was already used. A new question is issued below.\n\n`,
+        ),
       );
     }
     const answer = store.answer(token);
@@ -184,12 +228,22 @@ export function previewSignOff(store: SignOffStore, now: () => Date = () => new 
     }
     store.delete(token);
     const note = answer.notes?.trim() || undefined;
-    if (answer.answer === ACCEPT && answer.preview === accepted) return Promise.resolve({ outcome: 'approved', note, signer: 'person' });
+    if (answer.answer === ACCEPT && answer.preview === accepted)
+      return Promise.resolve({ outcome: 'approved', note, signer: 'person' });
     if (answer.answer === ACCEPT) {
-      return Promise.resolve({ outcome: 'declined', note, returned: 'Accept, but the recorded preview differs from the one issued' });
+      return Promise.resolve({
+        outcome: 'declined',
+        note,
+        returned: 'Accept, but the recorded preview differs from the one issued',
+      });
     }
-    const wrote = answer.answer === DECLINE ? note : [answer.answer, note].filter(Boolean).join(' — ');
-    return Promise.resolve({ outcome: 'declined', note: wrote, returned: `answer ${answer.answer === DECLINE ? DECLINE : 'Other'}` });
+    const wrote =
+      answer.answer === DECLINE ? note : [answer.answer, note].filter(Boolean).join(' — ');
+    return Promise.resolve({
+      outcome: 'declined',
+      note: wrote,
+      returned: `answer ${answer.answer === DECLINE ? DECLINE : 'Other'}`,
+    });
   };
 }
 
@@ -217,7 +271,9 @@ export function elicitSignOff(getServer: () => Elicitor | undefined) {
     // the substance is in the rows.
     const count = request.dropped.length;
     const message = `${request.identifier}: the agent wants to change ${count === 1 ? 'a Done when check' : `${String(count)} Done when checks`}. Read each row (↓), then Accept or Decline.`;
-    const fields = signOffRows(request).map((row, index) => [`row_${String(index + 1)}`, row] as const);
+    const fields = signOffRows(request).map(
+      (row, index) => [`row_${String(index + 1)}`, row] as const,
+    );
     try {
       const result = await server.elicitInput(
         {
@@ -226,7 +282,10 @@ export function elicitSignOff(getServer: () => Elicitor | undefined) {
           requestedSchema: {
             type: 'object',
             properties: Object.fromEntries(
-              fields.map(([key, row]) => [key, { type: 'string', title: row.title, description: row.text }]),
+              fields.map(([key, row]) => [
+                key,
+                { type: 'string', title: row.title, description: row.text },
+              ]),
             ),
           },
         },
@@ -238,9 +297,16 @@ export function elicitSignOff(getServer: () => Elicitor | undefined) {
         .join('\n');
       const said = note ? { note } : {};
       if (result.action === 'accept') return { outcome: 'approved', signer: 'person', ...said };
-      return { outcome: result.action === 'decline' ? 'declined' : 'unanswered', returned: shapeOf(result), ...said };
+      return {
+        outcome: result.action === 'decline' ? 'declined' : 'unanswered',
+        returned: shapeOf(result),
+        ...said,
+      };
     } catch (error) {
-      return { outcome: 'unanswered', returned: `error: ${error instanceof Error ? error.message : String(error)}` };
+      return {
+        outcome: 'unanswered',
+        returned: `error: ${error instanceof Error ? error.message : String(error)}`,
+      };
     }
   };
 }

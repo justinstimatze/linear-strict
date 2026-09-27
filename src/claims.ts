@@ -71,7 +71,9 @@ export function fileClaimStore(file = defaultClaimsPath()): ClaimStore {
     },
     delete: (issueId, userId) => {
       const target = key(issueId, userId);
-      save(Object.fromEntries(Object.entries(load()).filter(([candidate]) => candidate !== target)));
+      save(
+        Object.fromEntries(Object.entries(load()).filter(([candidate]) => candidate !== target)),
+      );
     },
   };
 }

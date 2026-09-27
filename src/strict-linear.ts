@@ -3,7 +3,14 @@ import { type FieldChanges, findUser, resolveFields } from './fields.js';
 import type { ClaimRecord, ClaimStore } from './claims.js';
 import { diffOps, lineDiff } from './diff.js';
 import { type PmNode, renderMarkdown } from './prosemirror.js';
-import { type Connection, type Gql, type Omission, PAGE_SIZE, errorMessage, paginate } from './graphql.js';
+import {
+  type Connection,
+  type Gql,
+  type Omission,
+  PAGE_SIZE,
+  errorMessage,
+  paginate,
+} from './graphql.js';
 import {
   type SectionPatch,
   addQuestion,
@@ -19,9 +26,22 @@ import {
   stripMarker,
   readSection,
 } from './sections.js';
-import { type AttachmentNode, type ReleaseNode, commentAuthorKind, pullRequests, shippedStateFindings } from './facts.js';
+import {
+  type AttachmentNode,
+  type ReleaseNode,
+  commentAuthorKind,
+  pullRequests,
+  shippedStateFindings,
+} from './facts.js';
 import { StrictWorkspace } from './workspace.js';
-import { MARKER_URL, MARKER_URLS, type MarkerAttachment, type StoredMarker, markerAttachmentInput, markerFromAttachment } from './marker.js';
+import {
+  MARKER_URL,
+  MARKER_URLS,
+  type MarkerAttachment,
+  type StoredMarker,
+  markerAttachmentInput,
+  markerFromAttachment,
+} from './marker.js';
 
 export const COMMENT_KINDS = ['evidence', 'correction', 'ask', 'answer', 'closed_by'] as const;
 export type CommentKind = (typeof COMMENT_KINDS)[number];
@@ -116,7 +136,10 @@ function doneWhenItems(description: string, pattern: RegExp): string[] {
 function droppedChecks(before: string, after: string): string[] {
   const kept = doneWhenItems(after, CHECK_ITEM);
   const survives = (item: string) =>
-    kept.some((line) => line === item || (line.startsWith(item) && /^[\s,;:.(—-]/.test(line.slice(item.length))));
+    kept.some(
+      (line) =>
+        line === item || (line.startsWith(item) && /^[\s,;:.(—-]/.test(line.slice(item.length))),
+    );
   return doneWhenItems(before, UNTICKED).filter((item) => !survives(item));
 }
 
@@ -200,10 +223,15 @@ const HISTORY_QUERY = connectionQuery(
   'id createdAt updatedDescription actor { id name displayName } botActor { name }',
 );
 const RELATIONS_QUERY = connectionQuery('relations', 'id type relatedIssue { identifier title }');
-const INVERSE_RELATIONS_QUERY = connectionQuery('inverseRelations', 'id type issue { identifier title }');
+const INVERSE_RELATIONS_QUERY = connectionQuery(
+  'inverseRelations',
+  'id type issue { identifier title }',
+);
 const CHILDREN_QUERY = connectionQuery('children', 'identifier title state { name type }');
-const ATTACHMENTS_QUERY = connectionQuery('attachments', 'id title subtitle url createdAt sourceType metadata');
-
+const ATTACHMENTS_QUERY = connectionQuery(
+  'attachments',
+  'id title subtitle url createdAt sourceType metadata',
+);
 
 const DESCRIPTION_DOC_QUERY = `query StrictDescriptionDoc($id: String!) {
   issue(id: $id) { id identifier description documentContent { id } }
@@ -391,7 +419,8 @@ export class StrictLinear {
   private readonly mainBranch: string;
   private readonly productionEnv: string;
   private readonly handsOff: string[];
-  private readonly signOff: ((request: SignOffRequest) => Promise<SignOffOutcome | SignOffAnswer>) | undefined;
+  private readonly signOff:
+    ((request: SignOffRequest) => Promise<SignOffOutcome | SignOffAnswer>) | undefined;
   private viewerCache: Viewer | null = null;
   /** Descriptions this server has returned or written, by hash, so a stale base can be shown as a diff. */
   private readonly seen = new Map<string, string>();
@@ -423,7 +452,10 @@ export class StrictLinear {
 
   private async core(id: string): Promise<IssueCore> {
     const data = await this.gql<{ issue: IssueCore | null }>(ISSUE_QUERY, { id });
-    if (!data.issue) throw new Error(`Issue ${id} not found. Search for it with list_issues (query: words from its title).`);
+    if (!data.issue)
+      throw new Error(
+        `Issue ${id} not found. Search for it with list_issues (query: words from its title).`,
+      );
     return data.issue;
   }
 
@@ -435,7 +467,9 @@ export class StrictLinear {
         `Nothing was written: ${issue.identifier} is ${issue.trashed ? 'in the trash' : 'archived'}. Reading it is fine; a person restores it in Linear before anyone works on it again.`,
       );
     }
-    const fence = issue.labels.nodes.find((label) => this.handsOff.includes(label.name.toLowerCase()));
+    const fence = issue.labels.nodes.find((label) =>
+      this.handsOff.includes(label.name.toLowerCase()),
+    );
     if (fence) {
       throw new Error(
         `Nothing was written: ${issue.identifier} carries the "${fence.name}" label, which keeps agents from changing it. Reading it is fine. If it needs work, say so to a person; only a person can remove the label.`,
@@ -464,7 +498,8 @@ export class StrictLinear {
     const current = issue.description ?? '';
     if (descriptionSha(current) === base) return;
     const read = this.seen.get(base);
-    const what = read === undefined ? '' : ` What changed since then:\n${lineDiff(read, current)}\n`;
+    const what =
+      read === undefined ? '' : ` What changed since then:\n${lineDiff(read, current)}\n`;
     throw new Error(
       `Nothing was written: ${issue.identifier}'s description is no longer the one your base (${base}) came from.${what}\nRead the ticket again with get_issue, check the patch still holds against what it says now, and repeat the call with its description_sha as base.`,
     );
@@ -472,11 +507,14 @@ export class StrictLinear {
 
   private connection<N>(query: string, id: string, field: string) {
     return (after: string | null) =>
-      this.gql<{ issue: Partial<Record<string, Connection<N>>> | null }>(query, { id, after }).then((data) => {
-        const connection = data.issue?.[field];
-        if (!connection) throw new Error(`Linear returned no ${field} connection for issue ${id}`);
-        return connection;
-      });
+      this.gql<{ issue: Partial<Record<string, Connection<N>>> | null }>(query, { id, after }).then(
+        (data) => {
+          const connection = data.issue?.[field];
+          if (!connection)
+            throw new Error(`Linear returned no ${field} connection for issue ${id}`);
+          return connection;
+        },
+      );
   }
 
   /** paginate(), but a failed first page becomes an Omission instead of an error. */
@@ -490,11 +528,19 @@ export class StrictLinear {
     stoppedBecause?: string,
   ): Promise<{ nodes: N[]; omitted: Omission[] }> {
     try {
-      return await paginate<N>(field, this.connection<N>(query, id, field), PAGE_SIZE, maxPages, stoppedBecause);
+      return await paginate<N>(
+        field,
+        this.connection<N>(query, id, field),
+        PAGE_SIZE,
+        maxPages,
+        stoppedBecause,
+      );
     } catch (error) {
       return {
         nodes: [] as N[],
-        omitted: [{ field, reason: `not fetched: ${errorMessage(error)}`, fetched: 0 }] as Omission[],
+        omitted: [
+          { field, reason: `not fetched: ${errorMessage(error)}`, fetched: 0 },
+        ] as Omission[],
       };
     }
   }
@@ -531,7 +577,10 @@ export class StrictLinear {
     // Comments are the point of this read, so a failed first page fails the
     // call rather than degrading to a description-only answer.
     const [comments, history, relations, inverse, children, attachments] = await Promise.all([
-      paginate<CommentNode>('comments', this.connection<CommentNode>(COMMENTS_QUERY, issue.id, 'comments')),
+      paginate<CommentNode>(
+        'comments',
+        this.connection<CommentNode>(COMMENTS_QUERY, issue.id, 'comments'),
+      ),
       // Linear returns history newest first and logs every field change there, so a busy ticket's
       // history runs to many pages. The latest description edit is near the top; the whole record
       // of description versions is description_history's job.
@@ -552,16 +601,12 @@ export class StrictLinear {
         INVERSE_RELATIONS_QUERY,
         issue.id,
       ),
-      this.soft<{ identifier: string; title: string; state: { name: string; type: string } | null }>(
-        'children',
-        CHILDREN_QUERY,
-        issue.id,
-      ),
-      this.soft<AttachmentNode>(
-        'attachments',
-        ATTACHMENTS_QUERY,
-        issue.id,
-      ),
+      this.soft<{
+        identifier: string;
+        title: string;
+        state: { name: string; type: string } | null;
+      }>('children', CHILDREN_QUERY, issue.id),
+      this.soft<AttachmentNode>('attachments', ATTACHMENTS_QUERY, issue.id),
     ]);
 
     const omitted: Omission[] = [
@@ -573,10 +618,18 @@ export class StrictLinear {
       ...attachments.omitted,
     ];
     if (issue.releases?.pageInfo.hasNextPage) {
-      omitted.push({ field: 'releases', reason: 'more than 20 releases; later releases were not fetched', fetched: 20 });
+      omitted.push({
+        field: 'releases',
+        reason: 'more than 20 releases; later releases were not fetched',
+        fetched: 20,
+      });
     }
     if (issue.labels.pageInfo.hasNextPage) {
-      omitted.push({ field: 'labels', reason: 'more than 100 labels; later labels were not fetched', fetched: 100 });
+      omitted.push({
+        field: 'labels',
+        reason: 'more than 100 labels; later labels were not fetched',
+        fetched: 100,
+      });
     }
 
     const sortedComments = [...comments.nodes].sort(
@@ -616,7 +669,9 @@ export class StrictLinear {
         id: comment.id,
         createdAt: comment.createdAt,
         author: authorName(comment),
-        ...(({ kind, basis }) => ({ author_kind: kind, author_kind_basis: basis }))(commentAuthorKind(comment)),
+        ...(({ kind, basis }) => ({ author_kind: kind, author_kind_basis: basis }))(
+          commentAuthorKind(comment),
+        ),
         edited_after_posting: comment.editedAt !== null,
         editedAt: comment.editedAt,
         parentId: comment.parent?.id ?? null,
@@ -629,10 +684,16 @@ export class StrictLinear {
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
         .map((entry) => ({
           at: entry.createdAt,
-          by: entry.actor ? entry.actor.displayName || entry.actor.name : (entry.botActor?.name ?? null),
+          by: entry.actor
+            ? entry.actor.displayName || entry.actor.name
+            : (entry.botActor?.name ?? null),
         })),
       relations: [
-        ...relations.nodes.map((r) => ({ type: r.type, direction: 'outgoing', issue: r.relatedIssue })),
+        ...relations.nodes.map((r) => ({
+          type: r.type,
+          direction: 'outgoing',
+          issue: r.relatedIssue,
+        })),
         ...inverse.nodes.map((r) => ({ type: r.type, direction: 'incoming', issue: r.issue })),
       ],
       children: children.nodes,
@@ -645,7 +706,10 @@ export class StrictLinear {
         url: release.url,
       })),
       attachments: attachments.nodes
-        .filter((attachment) => !MARKER_URLS.includes(attachment.url) && !prs.some((pr) => pr.url === attachment.url))
+        .filter(
+          (attachment) =>
+            !MARKER_URLS.includes(attachment.url) && !prs.some((pr) => pr.url === attachment.url),
+        )
         .map(({ id: attachmentId, title, subtitle, url, createdAt, sourceType }) => ({
           id: attachmentId,
           title,
@@ -678,13 +742,22 @@ export class StrictLinear {
   private drift(
     found: FoundMarker | null,
     description: string,
-    comments: { id: string; createdAt: string; editedAt: string | null; body: string; url: string }[],
+    comments: {
+      id: string;
+      createdAt: string;
+      editedAt: string | null;
+      body: string;
+      url: string;
+    }[],
     history: { createdAt: string; updatedDescription: boolean | null }[],
   ) {
     const marker = found?.marker ?? null;
     // The attachment records the hash of the description this server last wrote; another hash
     // means the description was changed elsewhere since, which may have undone a fold.
-    const changedElsewhere = found?.in === 'attachment' && marker?.sha !== undefined && marker.sha !== descriptionSha(description);
+    const changedElsewhere =
+      found?.in === 'attachment' &&
+      marker?.sha !== undefined &&
+      marker.sha !== descriptionSha(description);
     const lastEdit =
       history
         .filter((entry) => entry.updatedDescription)
@@ -713,7 +786,11 @@ export class StrictLinear {
     // A comment the description already accounts for can be edited afterwards; Linear keeps no
     // version of the old text, so the fold may no longer match what the comment says.
     const covered = comments.filter((comment) => !pending.includes(comment));
-    const edited = marker ? editedSince(covered, marker.checked) : lastEdit ? editedSince(covered, lastEdit) : [];
+    const edited = marker
+      ? editedSince(covered, marker.checked)
+      : lastEdit
+        ? editedSince(covered, lastEdit)
+        : [];
     const editedAfter = edited.map((comment) => ({
       id: comment.id,
       createdAt: comment.createdAt,
@@ -733,7 +810,15 @@ export class StrictLinear {
       }));
     const needsReconcile = unreconciled.length > 0 || editedAfter.length > 0;
     return {
-      reconciled_through: marker ? { through: marker.through, at: marker.at, by: marker.by, ...(marker.checked ? { checked: marker.checked } : {}), stored_in: found?.in } : null,
+      reconciled_through: marker
+        ? {
+            through: marker.through,
+            at: marker.at,
+            by: marker.by,
+            ...(marker.checked ? { checked: marker.checked } : {}),
+            stored_in: found?.in,
+          }
+        : null,
       last_description_edit_at: lastEdit,
       ...(changedElsewhere
         ? {
@@ -745,14 +830,16 @@ export class StrictLinear {
       unreconciled_comments: unreconciled,
       ...(editedAfter.length > 0 ? { edited_after_reconcile: editedAfter } : {}),
       ...(marker && !marker.checked && covered.some((comment) => comment.editedAt)
-        ? { edits_unchecked: 'The marker predates edit tracking, so edits to comments it covers cannot be dated against it. The next reconcile records the time.' }
+        ? {
+            edits_unchecked:
+              'The marker predates edit tracking, so edits to comments it covers cannot be dated against it. The next reconcile records the time.',
+          }
         : {}),
       ...(selfApplied.length > 0 ? { self_applied_after_marker: selfApplied.length } : {}),
       needs_reconcile: needsReconcile,
       ...(needsReconcile
         ? {
-            next_step:
-              `Read the ${[unreconciled.length > 0 ? 'unreconciled comments' : '', editedAfter.length > 0 ? 'comments edited after the description accounted for them' : ''].filter(Boolean).join(' and ')}. Fold what they establish into the description with set_state, passing reconciled_through (the newest comment id, even if the marker already names it) and accounts_for, which says for each comment whether it was folded or changes nothing and why.`,
+            next_step: `Read the ${[unreconciled.length > 0 ? 'unreconciled comments' : '', editedAfter.length > 0 ? 'comments edited after the description accounted for them' : ''].filter(Boolean).join(' and ')}. Fold what they establish into the description with set_state, passing reconciled_through (the newest comment id, even if the marker already names it) and accounts_for, which says for each comment whether it was folded or changes nothing and why.`,
           }
         : {}),
     };
@@ -774,24 +861,46 @@ export class StrictLinear {
    */
   async descriptionHistory(id: string, options: { blame?: boolean | undefined } = {}) {
     const data = await this.gql<{
-      issue: { id: string; identifier: string; description: string | null; documentContent: { id: string } | null } | null;
+      issue: {
+        id: string;
+        identifier: string;
+        description: string | null;
+        documentContent: { id: string } | null;
+      } | null;
     }>(DESCRIPTION_DOC_QUERY, { id });
-    if (!data.issue) throw new Error(`Issue ${id} not found. Search for it with list_issues (query: words from its title).`);
+    if (!data.issue)
+      throw new Error(
+        `Issue ${id} not found. Search for it with list_issues (query: words from its title).`,
+      );
     const { issue } = data;
     const description = issue.description ?? '';
     if (!issue.documentContent) {
-      return { issue: issue.identifier, versions: [], current: { in_a_version: false }, omitted: [{ field: 'versions', reason: 'Linear keeps no document history for this ticket' }] };
+      return {
+        issue: issue.identifier,
+        versions: [],
+        current: { in_a_version: false },
+        omitted: [
+          { field: 'versions', reason: 'Linear keeps no document history for this ticket' },
+        ],
+      };
     }
 
     const history = await this.gql<{
-      documentContentHistory: { success: boolean; history: { contentDataSnapshotAt: string; actorIds: string[]; contentData: PmNode }[] };
+      documentContentHistory: {
+        success: boolean;
+        history: { contentDataSnapshotAt: string; actorIds: string[]; contentData: PmNode }[];
+      };
     }>(CONTENT_HISTORY_QUERY, { id: issue.documentContent.id });
-    const snapshots = [...history.documentContentHistory.history].sort((a, b) => a.contentDataSnapshotAt.localeCompare(b.contentDataSnapshotAt));
+    const snapshots = [...history.documentContentHistory.history].sort((a, b) =>
+      a.contentDataSnapshotAt.localeCompare(b.contentDataSnapshotAt),
+    );
 
     const actorIds = [...new Set(snapshots.flatMap((snapshot) => snapshot.actorIds))];
     const names = new Map<string, string>();
     if (actorIds.length > 0) {
-      const users = await this.gql<{ users: { nodes: { id: string; name: string; displayName: string }[] } }>(USERS_BY_ID_QUERY, { ids: actorIds });
+      const users = await this.gql<{
+        users: { nodes: { id: string; name: string; displayName: string }[] };
+      }>(USERS_BY_ID_QUERY, { ids: actorIds });
       for (const user of users.users.nodes) names.set(user.id, user.displayName || user.name);
     }
 
@@ -817,12 +926,20 @@ export class StrictLinear {
       versions: versions.map((version, index) => {
         const previous = versions[index - 1];
         return previous
-          ? { version: version.version, at: version.at, by: version.by, diff: lineDiff(previous.text, version.text) }
+          ? {
+              version: version.version,
+              at: version.at,
+              by: version.by,
+              diff: lineDiff(previous.text, version.text),
+            }
           : { version: version.version, at: version.at, by: version.by, text: version.text };
       }),
       current: inAVersion
         ? { in_a_version: true, version: latest.version }
-        : { in_a_version: false, diff_from_latest_version: lineDiff(latest?.text ?? '', description) },
+        : {
+            in_a_version: false,
+            diff_from_latest_version: lineDiff(latest?.text ?? '', description),
+          },
       ...(unrendered.size > 0 ? { unrendered: [...unrendered].sort() } : {}),
       note: 'Versions are the snapshots Linear saves of the description. Edits made close together can share one version, and the newest edit may not be in a version yet (current says). The text of version 1 is whole; each later version is a diff against the one before it.',
     };
@@ -852,7 +969,9 @@ export class StrictLinear {
       blame: description.split('\n').map((line, index) => {
         const origin = origins[index] ?? null;
         const version = origin === null ? undefined : byVersion.get(origin);
-        return version ? { line, version: version.version, at: version.at, by: version.by } : { line, version: null };
+        return version
+          ? { line, version: version.version, at: version.at, by: version.by }
+          : { line, version: null };
       }),
     };
   }
@@ -866,7 +985,8 @@ export class StrictLinear {
    * with part of the set.
    */
   async listIssues(args: ListIssuesArgs) {
-    if (args.cycle !== undefined && !args.team) throw new Error('cycle needs team: each team numbers its own cycles');
+    if (args.cycle !== undefined && !args.team)
+      throw new Error('cycle needs team: each team numbers its own cycles');
 
     const state = {
       ...(args.state ? { name: { eqIgnoreCase: args.state } } : {}),
@@ -880,7 +1000,11 @@ export class StrictLinear {
       ...(args.cycle !== undefined ? { cycle: { number: { eq: args.cycle } } } : {}),
       // Linear's id comparator accepts only a UUID, so a name has to go to the name comparator.
       ...(args.project
-        ? { project: UUID.test(args.project) ? { id: { eq: args.project } } : { name: { eqIgnoreCase: args.project } } }
+        ? {
+            project: UUID.test(args.project)
+              ? { id: { eq: args.project } }
+              : { name: { eqIgnoreCase: args.project } },
+          }
         : {}),
     };
 
@@ -949,9 +1073,13 @@ export class StrictLinear {
 
   private async updateIssue(id: string, input: Record<string, unknown>) {
     const data = await this.gql<{
-      issueUpdate: { success: boolean; issue: { id: string; identifier: string; updatedAt: string; description: string | null } };
+      issueUpdate: {
+        success: boolean;
+        issue: { id: string; identifier: string; updatedAt: string; description: string | null };
+      };
     }>(ISSUE_UPDATE, { id, input });
-    if (!data.issueUpdate.success) throw new Error(`Linear reported issueUpdate as unsuccessful for ${id}`);
+    if (!data.issueUpdate.success)
+      throw new Error(`Linear reported issueUpdate as unsuccessful for ${id}`);
     return data.issueUpdate.issue;
   }
 
@@ -994,8 +1122,11 @@ export class StrictLinear {
     }
 
     const field = as === 'assignee' ? 'assigneeId' : 'delegateId';
-    const alreadyHeld = as === 'assignee' ? issue.assignee?.id === viewer.id : issue.delegate?.id === viewer.id;
-    const updated = alreadyHeld ? { updatedAt: issue.updatedAt, description: issue.description } : await this.updateIssue(issue.id, { [field]: viewer.id });
+    const alreadyHeld =
+      as === 'assignee' ? issue.assignee?.id === viewer.id : issue.delegate?.id === viewer.id;
+    const updated = alreadyHeld
+      ? { updatedAt: issue.updatedAt, description: issue.description }
+      : await this.updateIssue(issue.id, { [field]: viewer.id });
 
     const record: ClaimRecord = {
       issueId: issue.id,
@@ -1028,9 +1159,17 @@ export class StrictLinear {
     const viewer = await this.viewer();
     const claim = this.claims.get(issue.id, viewer.id);
     if (!claim) {
-      return { identifier: issue.identifier, claimed: false, reason: `No claim by ${viewer.name} is recorded on this machine.` };
+      return {
+        identifier: issue.identifier,
+        claimed: false,
+        reason: `No claim by ${viewer.name} is recorded on this machine.`,
+      };
     }
-    return { identifier: issue.identifier, claimed: true, ...this.claimStatus(claim, issue.description ?? '') };
+    return {
+      identifier: issue.identifier,
+      claimed: true,
+      ...this.claimStatus(claim, issue.description ?? ''),
+    };
   }
 
   /**
@@ -1059,7 +1198,9 @@ export class StrictLinear {
     // A write that changes nothing still rebuilds Linear's rich-text document, dropping its text
     // attribution, so the same text is not sent again. The marker below may still move.
     const updated =
-      next === before ? { updatedAt: issue.updatedAt, description: before } : await this.updateIssue(issue.id, { description: next });
+      next === before
+        ? { updatedAt: issue.updatedAt, description: before }
+        : await this.updateIssue(issue.id, { description: next });
     const written = updated.description ?? '';
 
     const claim = this.claims.get(issue.id, viewer.id);
@@ -1081,7 +1222,8 @@ export class StrictLinear {
         const data = await this.gql<{ attachmentCreate: { success: boolean } }>(MARKER_UPSERT, {
           input: markerAttachmentInput(issue.id, keep, descriptionSha(written)),
         });
-        if (!data.attachmentCreate.success) throw new Error('Linear reported attachmentCreate as unsuccessful');
+        if (!data.attachmentCreate.success)
+          throw new Error('Linear reported attachmentCreate as unsuccessful');
         // A card left at an earlier version's URL would show the ticket two markers.
         for (const old of issue.markerAttachment?.nodes ?? []) {
           if (old.url !== MARKER_URL) await this.gql(MARKER_DELETE, { id: old.id });
@@ -1115,9 +1257,12 @@ export class StrictLinear {
   ) {
     if (!Array.isArray(patches)) throw new Error('patch must be an array');
     if (patches.length === 0 && !reconciledThrough) {
-      throw new Error('Pass at least one section patch, or reconciled_through to confirm the description already reflects the thread');
+      throw new Error(
+        'Pass at least one section patch, or reconciled_through to confirm the description already reflects the thread',
+      );
     }
-    if (accountsFor.length > 0 && !reconciledThrough) throw new Error('accounts_for only applies with reconciled_through');
+    if (accountsFor.length > 0 && !reconciledThrough)
+      throw new Error('accounts_for only applies with reconciled_through');
     const issue = await this.writable(id);
     this.checkBase(issue, base);
     const next = applySectionPatches(issue.description ?? '', patches);
@@ -1128,37 +1273,79 @@ export class StrictLinear {
     if (reconciledThrough) {
       const comments = await paginate<MarkerNode>(
         'comments',
-        this.connection<MarkerNode>(connectionQuery('comments', 'id createdAt editedAt body user { name displayName app } botActor { name } externalUser { name }'), issue.id, 'comments'),
+        this.connection<MarkerNode>(
+          connectionQuery(
+            'comments',
+            'id createdAt editedAt body user { name displayName app } botActor { name } externalUser { name }',
+          ),
+          issue.id,
+          'comments',
+        ),
       );
       const [gap] = comments.omitted;
-      if (gap) throw new Error(`Could not read every comment to check reconciled_through: ${gap.reason}`);
-      const ordered = [...comments.nodes].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+      if (gap)
+        throw new Error(`Could not read every comment to check reconciled_through: ${gap.reason}`);
+      const ordered = [...comments.nodes].sort(
+        (a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
+      );
       const index = ordered.findIndex((comment) => comment.id === reconciledThrough);
       const through = ordered[index];
-      if (!through) throw new Error(`reconciled_through: ${reconciledThrough} is not a comment on ${issue.identifier}`);
+      if (!through)
+        throw new Error(
+          `reconciled_through: ${reconciledThrough} is not a comment on ${issue.identifier}`,
+        );
 
       const previous = findMarker(issue)?.marker ?? null;
-      const previousIndex = previous ? ordered.findIndex((comment) => comment.id === previous.through) : -1;
-      const start = previousIndex >= 0 ? previousIndex + 1 : previous ? ordered.findIndex((comment) => comment.createdAt > previous.at) : 0;
+      const previousIndex = previous
+        ? ordered.findIndex((comment) => comment.id === previous.through)
+        : -1;
+      const start =
+        previousIndex >= 0
+          ? previousIndex + 1
+          : previous
+            ? ordered.findIndex((comment) => comment.createdAt > previous.at)
+            : 0;
       if (start > index + 1 || (start === -1 && previous)) {
         throw new Error(
           `The description is already reconciled through a later comment (${previous?.through ?? 'unknown'}); reconciled_through cannot move back.`,
         );
       }
       // Comments the previous marker already covered, edited since it was written, need accounting again.
-      const edited = previous ? editedSince(ordered.slice(0, Math.max(start, 0)), previous.checked) : [];
-      accounting = checkAccounting([...edited, ...ordered.slice(start, index + 1)], accountsFor, patches.length > 0);
+      const edited = previous
+        ? editedSince(ordered.slice(0, Math.max(start, 0)), previous.checked)
+        : [];
+      accounting = checkAccounting(
+        [...edited, ...ordered.slice(start, index + 1)],
+        accountsFor,
+        patches.length > 0,
+      );
 
       const viewer = await this.viewer();
-      const written = { through: through.id, at: through.createdAt, by: viewer.displayName || viewer.name, checked: this.now().toISOString() };
+      const written = {
+        through: through.id,
+        at: through.createdAt,
+        by: viewer.displayName || viewer.name,
+        checked: this.now().toISOString(),
+      };
       moved = written;
       const later = ordered.length - index - 1;
       marker = later > 0 ? { ...written, comments_still_after: later } : written;
     }
 
-    const { dropped, note, signer, model } = await this.checkDescope(issue, next, descopeReason, 'set_state', descopeRisk, signOffToken);
+    const { dropped, note, signer, model } = await this.checkDescope(
+      issue,
+      next,
+      descopeReason,
+      'set_state',
+      descopeRisk,
+      signOffToken,
+    );
 
-    const { written, unseenChange, markerWarning } = await this.writeDescription(issue, next, moved);
+    const { written, unseenChange, markerWarning } = await this.writeDescription(
+      issue,
+      next,
+      moved,
+    );
     let descope: Record<string, unknown> | null = null;
     if (dropped.length > 0 && descopeReason) {
       const viewer = await this.viewer();
@@ -1215,16 +1402,29 @@ export class StrictLinear {
    * it needs a reason and a yes from the person at the client. Returns the
    * dropped items once approved; throws otherwise, before anything is written.
    */
-  private async checkDescope(issue: IssueCore, next: string, reason: string | undefined, via = 'set_state', risk?: string, token?: string) {
+  private async checkDescope(
+    issue: IssueCore,
+    next: string,
+    reason: string | undefined,
+    via = 'set_state',
+    risk?: string,
+    token?: string,
+  ) {
     const dropped = droppedChecks(issue.description ?? '', next);
     if (dropped.length === 0) {
-      if (reason) throw new Error('descope_reason was given, but this patch drops no unticked Done when item.');
-      if (token) throw new Error('sign_off was given, but this patch drops no unticked Done when item.');
+      if (reason)
+        throw new Error(
+          'descope_reason was given, but this patch drops no unticked Done when item.',
+        );
+      if (token)
+        throw new Error('sign_off was given, but this patch drops no unticked Done when item.');
       return { dropped, note: undefined, signer: undefined, model: undefined };
     }
     const list = dropped.map((item) => `- [ ] ${item}`).join('\n');
     if (via !== 'set_state') {
-      throw new Error(`This patch drops unticked Done when items:\n${list}\n\nDrop or reword them with set_state and a descope_reason instead, so the person at the client can approve it.\n\n${REWORDING}`);
+      throw new Error(
+        `This patch drops unticked Done when items:\n${list}\n\nDrop or reword them with set_state and a descope_reason instead, so the person at the client can approve it.\n\n${REWORDING}`,
+      );
     }
     if (!reason?.trim()) {
       throw new Error(
@@ -1259,17 +1459,27 @@ export class StrictLinear {
       : 'unavailable';
     const answer: SignOffAnswer = typeof raw === 'string' ? { outcome: raw } : raw;
     const { outcome, note, returned } = answer;
-    if (outcome === 'approved') return { dropped, note, signer: answer.signer ?? 'person', model: answer.model };
+    if (outcome === 'approved')
+      return { dropped, note, signer: answer.signer ?? 'person', model: answer.model };
     const ask = `Nothing was written. Dropping these items needs sign-off:\n${list}`;
     if (outcome === 'pending') throw new Error(`${ask}\n\n${answer.instructions ?? ''}`);
-    const said = note ? `\n\n${answer.signer === 'judge' ? `The judge (${answer.model ?? 'a model'}) wrote` : 'They wrote'}: ${note}` : '';
+    const said = note
+      ? `\n\n${answer.signer === 'judge' ? `The judge (${answer.model ?? 'a model'}) wrote` : 'They wrote'}: ${note}`
+      : '';
     const client = returned ? `\n\nThe client returned ${returned}.` : '';
     if (outcome === 'declined' && answer.signer === 'judge') {
-      throw new Error(`The sign-off judge declined. ${ask}${said}\n\nDo the checks, put the evidence the judge asked for in Observed and retry, or leave the items for a person.`);
+      throw new Error(
+        `The sign-off judge declined. ${ask}${said}\n\nDo the checks, put the evidence the judge asked for in Observed and retry, or leave the items for a person.`,
+      );
     }
-    if (outcome === 'declined') throw new Error(`Your user declined. ${ask}${said}${client}\n\nDo the checks, or ask them what should change.`);
+    if (outcome === 'declined')
+      throw new Error(
+        `Your user declined. ${ask}${said}${client}\n\nDo the checks, or ask them what should change.`,
+      );
     if (outcome === 'unanswered' && answer.signer === 'judge') {
-      throw new Error(`The sign-off judge gave no verdict (${returned ?? 'no detail'}). ${ask}\n\nRetry in a while, or leave the items for a person.`);
+      throw new Error(
+        `The sign-off judge gave no verdict (${returned ?? 'no detail'}). ${ask}\n\nRetry in a while, or leave the items for a person.`,
+      );
     }
     if (outcome === 'unanswered') {
       throw new Error(
@@ -1285,7 +1495,8 @@ export class StrictLinear {
     const data = await this.gql<{
       commentCreate: { success: boolean; comment: { id: string; url: string; createdAt: string } };
     }>(COMMENT_CREATE, { input: { issueId, body } });
-    if (!data.commentCreate.success) throw new Error('Linear reported commentCreate as unsuccessful');
+    if (!data.commentCreate.success)
+      throw new Error('Linear reported commentCreate as unsuccessful');
     return data.commentCreate.comment;
   }
 
@@ -1296,7 +1507,8 @@ export class StrictLinear {
    * is the state, and neither lands without the other.
    */
   async comment(id: string, args: CommentArgs) {
-    if (!COMMENT_KINDS.includes(args.kind)) throw new Error(`kind must be one of ${COMMENT_KINDS.join(', ')}`);
+    if (!COMMENT_KINDS.includes(args.kind))
+      throw new Error(`kind must be one of ${COMMENT_KINDS.join(', ')}`);
     if (typeof args.body !== 'string' || args.body.trim() === '') throw new Error('body is empty');
     const patch = args.patch ?? [];
 
@@ -1308,10 +1520,13 @@ export class StrictLinear {
     if (args.kind === 'answer' && !args.answers) {
       throw new Error('An answer must name the Open questions row it closes (answers: "Q3")');
     }
-    if (args.kind !== 'answer' && args.answers) throw new Error('answers is only valid with kind "answer"');
+    if (args.kind !== 'answer' && args.answers)
+      throw new Error('answers is only valid with kind "answer"');
     if (args.kind !== 'ask' && args.ask_to) throw new Error('ask_to is only valid with kind "ask"');
     if (args.kind === 'closed_by' && (!args.closed_by || !args.relation)) {
-      throw new Error('closed_by needs closed_by (the ticket that carried the work) and relation ("duplicate" or "fixed_there")');
+      throw new Error(
+        'closed_by needs closed_by (the ticket that carried the work) and relation ("duplicate" or "fixed_there")',
+      );
     }
     if (args.kind !== 'closed_by' && (args.closed_by || args.relation)) {
       throw new Error('closed_by and relation are only valid with kind "closed_by"');
@@ -1345,9 +1560,12 @@ export class StrictLinear {
 
     let closedBy: { id: string; identifier: string } | null = null;
     if (args.kind === 'closed_by' && args.closed_by) {
-      const found = await this.gql<{ issue: { id: string; identifier: string } | null }>(ISSUE_ID_QUERY, {
-        id: args.closed_by,
-      });
+      const found = await this.gql<{ issue: { id: string; identifier: string } | null }>(
+        ISSUE_ID_QUERY,
+        {
+          id: args.closed_by,
+        },
+      );
       if (!found.issue) throw new Error(`closed_by: ${args.closed_by} not found`);
       if (found.issue.id === issue.id) throw new Error('closed_by names this same ticket');
       closedBy = found.issue;
@@ -1359,7 +1577,9 @@ export class StrictLinear {
     if (args.kind === 'ask' && args.ask_to) {
       try {
         const person = await findUser(this.gql, args.ask_to, viewer);
-        mention = person.url ? { url: person.url } : { unresolved: 'Linear returned no profile URL' };
+        mention = person.url
+          ? { url: person.url }
+          : { unresolved: 'Linear returned no profile URL' };
       } catch (error) {
         mention = { unresolved: errorMessage(error) };
       }
@@ -1368,7 +1588,9 @@ export class StrictLinear {
     const subject = questionId ?? closedBy?.identifier;
     const header = `🤖 ${label} · ${date} · ${args.kind}${subject ? ` ${subject}` : ''}`;
     const patchNote =
-      patch.length > 0 ? `\n\nDescription updated: ${patch.map((p) => `${p.section} (${p.mode})`).join(', ')}.` : '';
+      patch.length > 0
+        ? `\n\nDescription updated: ${patch.map((p) => `${p.section} (${p.mode})`).join(', ')}.`
+        : '';
 
     // A correction's patch lands before its comment: if the comment then
     // fails, the description is still right and only the log entry is missing.
@@ -1386,36 +1608,65 @@ export class StrictLinear {
         identifier: issue.identifier,
         kind: args.kind,
         comment_url: comment.url,
-        ...(wrote ? { updated_sections: patch.map((p) => `${p.section} (${p.mode})`), description_sha: this.remember(wrote.written) } : {}),
+        ...(wrote
+          ? {
+              updated_sections: patch.map((p) => `${p.section} (${p.mode})`),
+              description_sha: this.remember(wrote.written),
+            }
+          : {}),
         ...(patch.length > 0 ? uncitedWarning(issue.description ?? '', description) : {}),
-        ...(wrote?.unseenChange ? { warning: 'The description had changed since your claim.', diff_since_claim: wrote.unseenChange } : {}),
+        ...(wrote?.unseenChange
+          ? {
+              warning: 'The description had changed since your claim.',
+              diff_since_claim: wrote.unseenChange,
+            }
+          : {}),
       };
     }
 
     if (closedBy && args.relation) {
       const relation = args.relation;
-      const comment = await this.postComment(issue.id, `${header}\n\n${args.body.trim()}${patchNote}`);
+      const comment = await this.postComment(
+        issue.id,
+        `${header}\n\n${args.body.trim()}${patchNote}`,
+      );
       const steps: string[] = [];
       try {
         // Linear reads a duplicate relation as "issueId duplicates relatedIssueId".
         await this.gql(RELATION_CREATE, {
-          input: { issueId: issue.id, relatedIssueId: closedBy.id, type: relation === 'duplicate' ? 'duplicate' : 'related' },
+          input: {
+            issueId: issue.id,
+            relatedIssueId: closedBy.id,
+            type: relation === 'duplicate' ? 'duplicate' : 'related',
+          },
         });
         steps.push('relation');
         const line = `Closed by ${closedBy.identifier} (${relation === 'duplicate' ? 'duplicate' : 'fixed there'}) on ${date} · [comment](${comment.url})`;
-        await this.writeDescription(issue, applySectionPatches(description, [{ section: 'Fix', mode: 'append', body: line }]));
+        await this.writeDescription(
+          issue,
+          applySectionPatches(description, [{ section: 'Fix', mode: 'append', body: line }]),
+        );
         steps.push('description');
       } catch (error) {
         throw new Error(
           `The comment posted (${comment.url}) but only [${steps.join(', ') || 'nothing'}] of [relation, description] landed: ${errorMessage(error)}`,
         );
       }
-      return { identifier: issue.identifier, kind: args.kind, closed_by: closedBy.identifier, relation, comment_url: comment.url };
+      return {
+        identifier: issue.identifier,
+        kind: args.kind,
+        closed_by: closedBy.identifier,
+        relation,
+        comment_url: comment.url,
+      };
     }
 
     // ask and answer need the comment's URL for the row, so the comment goes first.
     const askLine = mention && 'url' in mention ? `\n\nAsking ${mention.url}` : '';
-    const comment = await this.postComment(issue.id, `${header}\n\n${args.body.trim()}${askLine}${patchNote}`);
+    const comment = await this.postComment(
+      issue.id,
+      `${header}\n\n${args.body.trim()}${askLine}${patchNote}`,
+    );
     let sha: string | null = null;
     const rowId = questionId ?? nextQuestionId(description);
     try {
@@ -1445,10 +1696,15 @@ export class StrictLinear {
       ...(mention
         ? 'url' in mention
           ? { ask_to_mentioned: true }
-          : { ask_to_mentioned: false, ask_to_note: `${args.ask_to ?? ''} was written as text and not notified: ${mention.unresolved}` }
+          : {
+              ask_to_mentioned: false,
+              ask_to_note: `${args.ask_to ?? ''} was written as text and not notified: ${mention.unresolved}`,
+            }
         : {}),
       ...(sha ? { description_sha: sha } : {}),
-      ...(patch.length > 0 ? { updated_sections: patch.map((p) => `${p.section} (${p.mode})`) } : {}),
+      ...(patch.length > 0
+        ? { updated_sections: patch.map((p) => `${p.section} (${p.mode})`) }
+        : {}),
     };
   }
 
@@ -1464,13 +1720,18 @@ export class StrictLinear {
     const { input, changed, relations } = await resolveFields(this.gql, issue, viewer, changes);
 
     let updatedAt = issue.updatedAt;
-    if (Object.keys(input).length > 0) updatedAt = (await this.updateIssue(issue.id, input)).updatedAt;
+    if (Object.keys(input).length > 0)
+      updatedAt = (await this.updateIssue(issue.id, input)).updatedAt;
 
     const added: string[] = [];
     for (const relation of relations) {
       try {
         await this.gql(RELATION_CREATE, {
-          input: { issueId: relation.issueId, relatedIssueId: relation.relatedIssueId, type: relation.type },
+          input: {
+            issueId: relation.issueId,
+            relatedIssueId: relation.relatedIssueId,
+            type: relation.type,
+          },
         });
       } catch (error) {
         throw new Error(
@@ -1479,7 +1740,12 @@ export class StrictLinear {
       }
       added.push(relation.label);
     }
-    return { identifier: issue.identifier, changed, ...(added.length > 0 ? { relations_added: added } : {}), updatedAt };
+    return {
+      identifier: issue.identifier,
+      changed,
+      ...(added.length > 0 ? { relations_added: added } : {}),
+      updatedAt,
+    };
   }
 
   /**
@@ -1490,14 +1756,17 @@ export class StrictLinear {
   async setStatus(id: string, stateName: string, reason?: string) {
     const issue = await this.writable(id);
     const viewer = await this.viewer();
-    const data = await this.gql<{ issue: { team: { states: { nodes: { id: string; name: string; type: string }[] } } } }>(
-      TEAM_STATES_QUERY,
-      { id: issue.id },
-    );
+    const data = await this.gql<{
+      issue: { team: { states: { nodes: { id: string; name: string; type: string }[] } } };
+    }>(TEAM_STATES_QUERY, { id: issue.id });
     const states = data.issue.team.states.nodes;
-    const target = states.find((state) => state.name.toLowerCase() === stateName.trim().toLowerCase());
+    const target = states.find(
+      (state) => state.name.toLowerCase() === stateName.trim().toLowerCase(),
+    );
     if (!target) {
-      throw new Error(`No state "${stateName}" on ${issue.team?.key ?? 'this team'}. States: ${states.map((s) => s.name).join(', ')}`);
+      throw new Error(
+        `No state "${stateName}" on ${issue.team?.key ?? 'this team'}. States: ${states.map((s) => s.name).join(', ')}`,
+      );
     }
 
     let unchecked: string[] = [];
@@ -1532,7 +1801,12 @@ export class StrictLinear {
           `Refusing to move ${issue.identifier} to ${target.name}: ${String(uncited.length)} ticked Done when item${uncited.length === 1 ? ' does' : 's do'} not cite what showed ${uncited.length === 1 ? 'it' : 'them'} true:\n${uncited.map(({ item, reason }) => `- [x] ${item} (${reason})`).join('\n')}\n\n${CITING}`,
         );
       }
-      unchecked = await this.citedPullRequestsMerged(issue.id, issue.identifier, target.name, issue.description ?? '');
+      unchecked = await this.citedPullRequestsMerged(
+        issue.id,
+        issue.identifier,
+        target.name,
+        issue.description ?? '',
+      );
     }
 
     // Canceling ends the work without the Done checks, so it has to say why, where people will read it.
@@ -1544,14 +1818,22 @@ export class StrictLinear {
     }
 
     const updated = await this.updateIssue(issue.id, { stateId: target.id });
-    if (target.type === 'completed' || target.type === 'canceled') this.claims.delete(issue.id, viewer.id);
+    if (target.type === 'completed' || target.type === 'canceled')
+      this.claims.delete(issue.id, viewer.id);
     let reasonComment: string | null = null;
     if (why) {
       const label = viewer.app ? nameOf(viewer) : `agent via ${nameOf(viewer)}`;
       try {
-        reasonComment = (await this.postComment(issue.id, `🤖 ${label} · ${this.today()} · ${target.name}\n\n${why}`)).url;
+        reasonComment = (
+          await this.postComment(
+            issue.id,
+            `🤖 ${label} · ${this.today()} · ${target.name}\n\n${why}`,
+          )
+        ).url;
       } catch (error) {
-        throw new Error(`${issue.identifier} moved to ${target.name}, but the comment giving the reason did not post: ${errorMessage(error)}. Post it with comment kind evidence.`);
+        throw new Error(
+          `${issue.identifier} moved to ${target.name}, but the comment giving the reason did not post: ${errorMessage(error)}. Post it with comment kind evidence.`,
+        );
       }
     }
     return {
@@ -1560,7 +1842,9 @@ export class StrictLinear {
       updatedAt: updated.updatedAt,
       ...(reasonComment ? { reason_comment: reasonComment } : {}),
       ...(unchecked.length > 0
-        ? { unchecked_prs: `Linear's GitHub attachment gave no merge status for ${unchecked.join(', ')}, so whether ${unchecked.length === 1 ? 'it' : 'they'} merged was not checked.` }
+        ? {
+            unchecked_prs: `Linear's GitHub attachment gave no merge status for ${unchecked.join(', ')}, so whether ${unchecked.length === 1 ? 'it' : 'they'} merged was not checked.`,
+          }
         : {}),
     };
   }
@@ -1573,7 +1857,12 @@ export class StrictLinear {
    * document, so only a status that says the PR is not merged refuses; a
    * missing or unfamiliar one passes and is named in the result.
    */
-  private async citedPullRequestsMerged(id: string, identifier: string, stateName: string, description: string): Promise<string[]> {
+  private async citedPullRequestsMerged(
+    id: string,
+    identifier: string,
+    stateName: string,
+    description: string,
+  ): Promise<string[]> {
     const cited = citedPullRequestNumbers(description);
     if (cited.length === 0) return [];
     const attachments = await this.soft<AttachmentNode>('attachments', ATTACHMENTS_QUERY, id);
@@ -1584,13 +1873,18 @@ export class StrictLinear {
         `Refusing to move ${identifier} to ${stateName}: a ticked Done when item cites ${unmerged.map((pr) => `PR #${String(pr.number)}, which is ${pr.draft ? 'a draft' : pr.status}`).join(' and ')}, not merged. Tick it once the PR merges, or cite the one that did.`,
       );
     }
-    return linked.filter((pr) => pr.status !== 'merged' && !unmerged.includes(pr)).map((pr) => `PR #${String(pr.number)}`);
+    return linked
+      .filter((pr) => pr.status !== 'merged' && !unmerged.includes(pr))
+      .map((pr) => `PR #${String(pr.number)}`);
   }
 
   async createIssue(args: CreateIssueArgs) {
-    const teams = await this.gql<{ teams: { nodes: { id: string; key: string }[] } }>(TEAM_BY_KEY_QUERY, {
-      key: args.team,
-    });
+    const teams = await this.gql<{ teams: { nodes: { id: string; key: string }[] } }>(
+      TEAM_BY_KEY_QUERY,
+      {
+        key: args.team,
+      },
+    );
     const team = teams.teams.nodes[0];
     if (!team) throw new Error(`No team with key "${args.team}". list_teams gives the keys.`);
     if (!args.title.trim()) throw new Error('title is empty');
@@ -1605,7 +1899,10 @@ export class StrictLinear {
     };
 
     const data = await this.gql<{
-      issueCreate: { success: boolean; issue: { id: string; identifier: string; url: string; title: string } };
+      issueCreate: {
+        success: boolean;
+        issue: { id: string; identifier: string; url: string; title: string };
+      };
     }>(ISSUE_CREATE, { input });
     if (!data.issueCreate.success) throw new Error('Linear reported issueCreate as unsuccessful');
     return data.issueCreate.issue;
@@ -1634,9 +1931,14 @@ function isSelfApplied(body: string): boolean {
  * with a reason. Moving the marker is otherwise a way to skip a correction.
  */
 /** Comments edited after a time. With no time on record, nothing can be dated, so none are returned. */
-function editedSince<C extends { editedAt?: string | null }>(comments: C[], since: string | null | undefined): C[] {
+function editedSince<C extends { editedAt?: string | null }>(
+  comments: C[],
+  since: string | null | undefined,
+): C[] {
   if (!since) return [];
-  return comments.filter((comment) => typeof comment.editedAt === 'string' && comment.editedAt > since);
+  return comments.filter(
+    (comment) => typeof comment.editedAt === 'string' && comment.editedAt > since,
+  );
 }
 
 function checkAccounting(range: MarkerNode[], accountsFor: Accounting[], hasPatches: boolean) {
@@ -1650,13 +1952,15 @@ function checkAccounting(range: MarkerNode[], accountsFor: Accounting[], hasPatc
       problems.push(`${entry.comment}: no_state_change needs a reason`);
     }
     if (entry.comment === '*') wildcard = entry;
-    else if (!inRange.has(entry.comment)) problems.push(`${entry.comment} is not between the previous marker and reconciled_through`);
+    else if (!inRange.has(entry.comment))
+      problems.push(`${entry.comment} is not between the previous marker and reconciled_through`);
     else named.set(entry.comment, entry);
   }
 
   const selfApplied: string[] = [];
   const folded: string[] = [];
-  const quiet: { comment: string; author: string | null; author_kind: string; reason: string }[] = [];
+  const quiet: { comment: string; author: string | null; author_kind: string; reason: string }[] =
+    [];
   const missing: string[] = [];
   for (const comment of range) {
     if (isSelfApplied(comment.body)) {
@@ -1674,7 +1978,9 @@ function checkAccounting(range: MarkerNode[], accountsFor: Accounting[], hasPatc
       const author = commentAuthorKind(comment);
       quiet.push({
         comment: comment.id,
-        author: comment.user ? comment.user.displayName || comment.user.name : (comment.botActor?.name ?? comment.externalUser?.name ?? null),
+        author: comment.user
+          ? comment.user.displayName || comment.user.name
+          : (comment.botActor?.name ?? comment.externalUser?.name ?? null),
         author_kind: author.kind,
         reason: entry.reason ?? '',
       });
@@ -1682,14 +1988,17 @@ function checkAccounting(range: MarkerNode[], accountsFor: Accounting[], hasPatc
   }
 
   if (folded.length > 0 && !hasPatches) {
-    problems.push(`${String(folded.length)} comment(s) marked folded, but this call carries no patch to fold them into`);
+    problems.push(
+      `${String(folded.length)} comment(s) marked folded, but this call carries no patch to fold them into`,
+    );
   }
   if (missing.length > 0) {
     problems.push(
       `not accounted for: ${missing.join(', ')}. Add each to accounts_for as {comment, how: "folded"} (with the patch in this call) or {comment, how: "no_state_change", reason}; {comment: "*", ...} covers the rest.`,
     );
   }
-  if (problems.length > 0) throw new Error(`reconciled_through would skip comments:\n- ${problems.join('\n- ')}`);
+  if (problems.length > 0)
+    throw new Error(`reconciled_through would skip comments:\n- ${problems.join('\n- ')}`);
 
   const people = quiet.filter((entry) => entry.author_kind === 'person');
   return {
@@ -1699,7 +2008,7 @@ function checkAccounting(range: MarkerNode[], accountsFor: Accounting[], hasPatc
     ...(people.length > 0
       ? {
           review:
-            'Comments by people were marked as changing nothing. A person\'s comment is often the only first-hand record on a ticket; check these were not decisions or corrections.',
+            "Comments by people were marked as changing nothing. A person's comment is often the only first-hand record on a ticket; check these were not decisions or corrections.",
         }
       : {}),
   };

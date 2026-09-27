@@ -12,17 +12,29 @@ function handlers() {
 
 describe('strict tools', () => {
   it('has exactly one handler for every advertised tool', () => {
-    expect(Object.keys(handlers()).sort()).toEqual(strictToolDefinitions.map((tool) => tool.name).sort());
+    expect(Object.keys(handlers()).sort()).toEqual(
+      strictToolDefinitions.map((tool) => tool.name).sort(),
+    );
   });
 
   it('refuses a description patch that does not name its base', async () => {
-    const patch = [{ section: 'Observed', mode: 'append', body: '- 2026-09-24 · `curl /health` · 200' }];
-    await expect(Promise.resolve().then(() => handlers()['set_state']?.({ issue: 'ENG-1', patch }))).rejects.toThrow(/base is required/);
-    await expect(Promise.resolve().then(() => handlers()['comment']?.({ issue: 'ENG-1', kind: 'evidence', body: 'Seen.', patch }))).rejects.toThrow(/base is required/);
+    const patch = [
+      { section: 'Observed', mode: 'append', body: '- 2026-09-24 · `curl /health` · 200' },
+    ];
+    await expect(
+      Promise.resolve().then(() => handlers()['set_state']?.({ issue: 'ENG-1', patch })),
+    ).rejects.toThrow(/base is required/);
+    await expect(
+      Promise.resolve().then(() =>
+        handlers()['comment']?.({ issue: 'ENG-1', kind: 'evidence', body: 'Seen.', patch }),
+      ),
+    ).rejects.toThrow(/base is required/);
   });
 
   it('posts a comment without a patch with no base', async () => {
-    await expect(handlers()['comment']?.({ issue: 'ENG-1', kind: 'evidence', body: 'Seen.' })).resolves.toMatchObject({ kind: 'evidence' });
+    await expect(
+      handlers()['comment']?.({ issue: 'ENG-1', kind: 'evidence', body: 'Seen.' }),
+    ).resolves.toMatchObject({ kind: 'evidence' });
   });
 
   it('whoami returns the identity behind the token', async () => {

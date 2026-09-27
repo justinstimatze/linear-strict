@@ -44,7 +44,10 @@ async function main(): Promise<void> {
           claims,
           mainBranch: process.env['LINEAR_STRICT_MAIN_BRANCH'] || 'main',
           productionEnv: process.env['LINEAR_STRICT_PRODUCTION_ENV'] || 'production',
-          handsOffLabels: (process.env['LINEAR_STRICT_HANDS_OFF_LABELS'] || 'no-agents').split(',').map((label) => label.trim()).filter(Boolean),
+          handsOffLabels: (process.env['LINEAR_STRICT_HANDS_OFF_LABELS'] || 'no-agents')
+            .split(',')
+            .map((label) => label.trim())
+            .filter(Boolean),
           signOff,
         }),
       ),
@@ -118,11 +121,17 @@ function chooseSignOff(getServer: () => Elicitor | undefined) {
   if (mode === 'judge') {
     const found = resolveJudgeKey();
     if (!found) {
-      throw new Error(`LINEAR_STRICT_SIGN_OFF=judge needs an Anthropic API key: run \`linear-strict auth judge-key set\`, or set ANTHROPIC_API_KEY in the server's environment.`);
+      throw new Error(
+        `LINEAR_STRICT_SIGN_OFF=judge needs an Anthropic API key: run \`linear-strict auth judge-key set\`, or set ANTHROPIC_API_KEY in the server's environment.`,
+      );
     }
-    return judgeSignOff({ apiKey: found.key, model: process.env['LINEAR_STRICT_JUDGE_MODEL'] || DEFAULT_JUDGE_MODEL });
+    return judgeSignOff({
+      apiKey: found.key,
+      model: process.env['LINEAR_STRICT_JUDGE_MODEL'] || DEFAULT_JUDGE_MODEL,
+    });
   }
-  if (mode !== 'person') throw new Error(`LINEAR_STRICT_SIGN_OFF must be person or judge, not ${mode}.`);
+  if (mode !== 'person')
+    throw new Error(`LINEAR_STRICT_SIGN_OFF must be person or judge, not ${mode}.`);
   const elicit = elicitSignOff(getServer);
   const preview = previewSignOff(fileSignOffStore());
   return (request: SignOffRequest) => {
@@ -131,15 +140,21 @@ function chooseSignOff(getServer: () => Elicitor | undefined) {
     const health = signOffHookHealth();
     if (health.files.length > 0 && health.problems.length > 0) {
       // Hooks that can't run would leave the question unanswered for good; the form still works.
-      process.stderr.write(`linear-strict: sign-off hooks can't run, asking through the form instead: ${health.problems.join(' ')}\n`);
+      process.stderr.write(
+        `linear-strict: sign-off hooks can't run, asking through the form instead: ${health.problems.join(' ')}\n`,
+      );
     }
-    return health.files.length > 0 && health.problems.length === 0 ? preview(request) : elicit(request);
+    return health.files.length > 0 && health.problems.length === 0
+      ? preview(request)
+      : elicit(request);
   };
 }
 
 function runHook(event: string | undefined): number {
   if (event !== 'ask-pre' && event !== 'ask-post') {
-    process.stderr.write('Usage: linear-strict hook ask-pre|ask-post (run by Claude Code, with the hook payload on stdin)\n');
+    process.stderr.write(
+      'Usage: linear-strict hook ask-pre|ask-post (run by Claude Code, with the hook payload on stdin)\n',
+    );
     return 1;
   }
   let input: Parameters<typeof askPre>[0];

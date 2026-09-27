@@ -35,7 +35,13 @@ export interface FakeState {
   comments: FakeComment[];
   descriptionEdits: { createdAt: string; actorName: string }[];
   states: { id: string; name: string; type: string }[];
-  attachments: { title: string; url: string; sourceType: string; metadata: Record<string, unknown>; subtitle?: string | null }[];
+  attachments: {
+    title: string;
+    url: string;
+    sourceType: string;
+    metadata: Record<string, unknown>;
+    subtitle?: string | null;
+  }[];
   /** When set, attachmentCreate for the reconciled marker fails. */
   failMarkerUpsert?: boolean;
   relations: { issueId: string; relatedIssueId: string; type: string }[];
@@ -45,7 +51,14 @@ export interface FakeState {
   failCommentPages: Set<number>;
   calls: { operation: string; variables: Record<string, unknown> }[];
   /** Workspace people, labels, cycles, projects and milestones that set_fields resolves names against. */
-  users: { id: string; name: string; displayName: string; email: string; app?: boolean; active: boolean }[];
+  users: {
+    id: string;
+    name: string;
+    displayName: string;
+    email: string;
+    app?: boolean;
+    active: boolean;
+  }[];
   labels: { id: string; name: string; isGroup: boolean }[];
   cycles: { id: string; number: number; name: string | null; isActive: boolean; isNext: boolean }[];
   projects: { id: string; name: string }[];
@@ -67,7 +80,8 @@ export function fakeState(overrides: Partial<FakeState> = {}): FakeState {
       id: 'issue-1',
       identifier: 'ENG-1',
       title: 'A ticket',
-      description: '## Observed\n\n- 2026-09-01 · `curl /health` · 200\n\n## Done when\n\n- [x] `npm test` passes · `npm test` → 142 passed',
+      description:
+        '## Observed\n\n- 2026-09-01 · `curl /health` · 200\n\n## Done when\n\n- [x] `npm test` passes · `npm test` → 142 passed',
       updatedAt: '2026-09-01T00:00:00.000Z',
       assignee: null,
       delegate: null,
@@ -89,8 +103,21 @@ export function fakeState(overrides: Partial<FakeState> = {}): FakeState {
     otherComments: [],
     users: [
       { id: 'u-ada', name: 'Ada', displayName: 'Ada', email: 'ada@example.com', active: true },
-      { id: 'u-grace', name: 'Grace', displayName: 'Grace', email: 'grace@example.com', active: true },
-      { id: 'u-agent-b', name: 'agent-b', displayName: 'agent-b', email: 'agent-b@example.com', app: true, active: true },
+      {
+        id: 'u-grace',
+        name: 'Grace',
+        displayName: 'Grace',
+        email: 'grace@example.com',
+        active: true,
+      },
+      {
+        id: 'u-agent-b',
+        name: 'agent-b',
+        displayName: 'agent-b',
+        email: 'agent-b@example.com',
+        app: true,
+        active: true,
+      },
     ],
     labels: [
       { id: 'l-bug', name: 'Bug', isGroup: false },
@@ -143,15 +170,25 @@ function issueNode(state: FakeState) {
     creator: null,
     parent: null,
     project: issue.project ?? null,
-    labels: { nodes: (issue.labels ?? []).map((name) => ({ id: `l-${name}`, name })), pageInfo: { hasNextPage: false, endCursor: null } },
+    labels: {
+      nodes: (issue.labels ?? []).map((name) => ({ id: `l-${name}`, name })),
+      pageInfo: { hasNextPage: false, endCursor: null },
+    },
     markerAttachment: {
-      nodes: state.attachments.flatMap((a, i) => (MARKER_URLS.includes(a.url) ? [{ id: `a-${String(i)}`, url: a.url, metadata: a.metadata }] : [])),
+      nodes: state.attachments.flatMap((a, i) =>
+        MARKER_URLS.includes(a.url)
+          ? [{ id: `a-${String(i)}`, url: a.url, metadata: a.metadata }]
+          : [],
+      ),
     },
   };
 }
 
 function nameMatches(wanted: unknown, ...candidates: string[]) {
-  return typeof wanted === 'string' && candidates.some((candidate) => candidate.toLowerCase() === wanted.toLowerCase());
+  return (
+    typeof wanted === 'string' &&
+    candidates.some((candidate) => candidate.toLowerCase() === wanted.toLowerCase())
+  );
 }
 
 type Filter = Record<string, Record<string, unknown> | undefined>;
@@ -164,7 +201,9 @@ export function fakeGql(state: FakeState): Gql {
 
     if (operation.startsWith('StrictIssue_') && variables['id'] !== issue.id) {
       const field = operation.slice('StrictIssue_'.length);
-      return { issue: { [field]: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } } } };
+      return {
+        issue: { [field]: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } } },
+      };
     }
 
     switch (operation) {
@@ -172,7 +211,9 @@ export function fakeGql(state: FakeState): Gql {
         return { viewer: state.viewer };
       case 'StrictIssue': {
         const wanted = variables['id'];
-        const other = state.others.find((candidate) => candidate.id === wanted || candidate.identifier === wanted);
+        const other = state.others.find(
+          (candidate) => candidate.id === wanted || candidate.identifier === wanted,
+        );
         if (other?.title !== undefined) {
           return {
             issue: {
@@ -192,8 +233,10 @@ export function fakeGql(state: FakeState): Gql {
         return { issue: issueNode(state) };
       }
       case 'StrictIssue_comments': {
-        const pageNumber = (typeof variables['after'] === 'string' ? Number(variables['after']) / 100 : 0) + 1;
-        if (state.failCommentPages.has(pageNumber)) throw new Error(`simulated failure on page ${pageNumber}`);
+        const pageNumber =
+          (typeof variables['after'] === 'string' ? Number(variables['after']) / 100 : 0) + 1;
+        if (state.failCommentPages.has(pageNumber))
+          throw new Error(`simulated failure on page ${pageNumber}`);
         const nodes = state.comments.map((c) => ({
           id: c.id,
           body: c.body,
@@ -202,7 +245,12 @@ export function fakeGql(state: FakeState): Gql {
           editedAt: c.editedAt ?? null,
           url: `https://linear.app/x/issue/${issue.identifier}#comment-${c.id}`,
           parent: null,
-          user: { id: `u-${c.userName}`, name: c.userName, displayName: c.userName, app: c.userName === state.viewer.name && state.viewer.app },
+          user: {
+            id: `u-${c.userName}`,
+            name: c.userName,
+            displayName: c.userName,
+            app: c.userName === state.viewer.name && state.viewer.app,
+          },
           botActor: null,
           externalUser: null,
         }));
@@ -227,13 +275,19 @@ export function fakeGql(state: FakeState): Gql {
         return {
           issue: {
             attachments: page(
-              state.attachments.map((a, i) => ({ id: `a-${i}`, subtitle: null, createdAt: '2026-09-01T00:00:00.000Z', ...a })),
+              state.attachments.map((a, i) => ({
+                id: `a-${i}`,
+                subtitle: null,
+                createdAt: '2026-09-01T00:00:00.000Z',
+                ...a,
+              })),
               variables,
             ),
           },
         };
       case 'StrictDescriptionDoc':
-        if (variables['id'] !== issue.id && variables['id'] !== issue.identifier) return { issue: null };
+        if (variables['id'] !== issue.id && variables['id'] !== issue.identifier)
+          return { issue: null };
         return {
           issue: {
             id: issue.id,
@@ -246,14 +300,22 @@ export function fakeGql(state: FakeState): Gql {
         return {
           documentContentHistory: {
             success: true,
-            history: [...(state.snapshots ?? [])]
-              .reverse()
-              .map((snapshot) => ({ contentDataSnapshotAt: snapshot.at, actorIds: snapshot.actorIds, contentData: snapshot.doc })),
+            history: [...(state.snapshots ?? [])].reverse().map((snapshot) => ({
+              contentDataSnapshotAt: snapshot.at,
+              actorIds: snapshot.actorIds,
+              contentData: snapshot.doc,
+            })),
           },
         };
       case 'StrictUsersById': {
         const ids = variables['ids'] as string[];
-        return { users: { nodes: state.users.filter((user) => ids.includes(user.id)).map(({ id, name, displayName }) => ({ id, name, displayName })) } };
+        return {
+          users: {
+            nodes: state.users
+              .filter((user) => ids.includes(user.id))
+              .map(({ id, name, displayName }) => ({ id, name, displayName })),
+          },
+        };
       }
       case 'StrictIssueRef':
       case 'StrictIssueId': {
@@ -270,11 +332,25 @@ export function fakeGql(state: FakeState): Gql {
             ? user.id === filter.id.eq
             : (filter.or ?? []).some((clause) =>
                 Object.entries(clause).some(([field, comparator]) =>
-                  nameMatches(comparator?.['eqIgnoreCase'], user[field as 'name' | 'displayName' | 'email']),
+                  nameMatches(
+                    comparator?.['eqIgnoreCase'],
+                    user[field as 'name' | 'displayName' | 'email'],
+                  ),
                 ),
               ),
         );
-        return { users: { nodes: nodes.map(({ id, name, displayName, email, active }) => ({ id, name, displayName, email, active, url: `https://linear.app/x/profiles/${name.toLowerCase()}` })) } };
+        return {
+          users: {
+            nodes: nodes.map(({ id, name, displayName, email, active }) => ({
+              id,
+              name,
+              displayName,
+              email,
+              active,
+              url: `https://linear.app/x/profiles/${name.toLowerCase()}`,
+            })),
+          },
+        };
       }
       case 'StrictTeamLabels':
         return { issueLabels: page(state.labels, variables) };
@@ -291,7 +367,9 @@ export function fakeGql(state: FakeState): Gql {
       case 'StrictProjectsByName': {
         const filter = variables['filter'] as Filter;
         const nodes = state.projects.filter((project) =>
-          filter['id'] ? project.id === filter['id']['eq'] : nameMatches(filter['name']?.['eqIgnoreCase'], project.name),
+          filter['id']
+            ? project.id === filter['id']['eq']
+            : nameMatches(filter['name']?.['eqIgnoreCase'], project.name),
         );
         return { projects: { nodes } };
       }
@@ -299,20 +377,42 @@ export function fakeGql(state: FakeState): Gql {
         return {
           projectMilestones: {
             nodes: state.milestones
-              .filter((milestone) => milestone.projectId === variables['projectId'] && nameMatches(variables['name'], milestone.name))
+              .filter(
+                (milestone) =>
+                  milestone.projectId === variables['projectId'] &&
+                  nameMatches(variables['name'], milestone.name),
+              )
               .map(({ id, name }) => ({ id, name })),
           },
         };
       case 'StrictMarkerUpsert': {
         if (state.failMarkerUpsert) throw new Error('simulated attachmentCreate failure');
-        const input = variables['input'] as { issueId: string; url: string; title: string; subtitle: string; metadata: Record<string, unknown> };
-        if (input.issueId !== issue.id) throw new Error(`fake Linear has no issue ${input.issueId}`);
+        const input = variables['input'] as {
+          issueId: string;
+          url: string;
+          title: string;
+          subtitle: string;
+          metadata: Record<string, unknown>;
+        };
+        if (input.issueId !== issue.id)
+          throw new Error(`fake Linear has no issue ${input.issueId}`);
         // Linear upserts on (url, issue) and replaces the metadata whole.
         const existing = state.attachments.find((a) => a.url === input.url);
-        const next = { title: input.title, subtitle: input.subtitle, url: input.url, sourceType: 'api', metadata: input.metadata };
+        const next = {
+          title: input.title,
+          subtitle: input.subtitle,
+          url: input.url,
+          sourceType: 'api',
+          metadata: input.metadata,
+        };
         if (existing) Object.assign(existing, next);
         else state.attachments.push(next);
-        return { attachmentCreate: { success: true, attachment: { id: `a-${state.attachments.indexOf(existing ?? next)}` } } };
+        return {
+          attachmentCreate: {
+            success: true,
+            attachment: { id: `a-${state.attachments.indexOf(existing ?? next)}` },
+          },
+        };
       }
       case 'StrictMarkerDelete': {
         const index = Number(String(variables['id']).slice('a-'.length));
@@ -326,7 +426,9 @@ export function fakeGql(state: FakeState): Gql {
       case 'StrictIssue_inverseRelations':
       case 'StrictIssue_children': {
         const field = operation.slice('StrictIssue_'.length);
-        return { issue: { [field]: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } } } };
+        return {
+          issue: { [field]: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } } },
+        };
       }
       case 'StrictIssueUpdate': {
         const input = variables['input'] as Record<string, unknown>;
@@ -338,7 +440,12 @@ export function fakeGql(state: FakeState): Gql {
           return {
             issueUpdate: {
               success: true,
-              issue: { id: other.id, identifier: other.identifier, updatedAt: tick(state), description: other.description ?? '' },
+              issue: {
+                id: other.id,
+                identifier: other.identifier,
+                updatedAt: tick(state),
+                description: other.description ?? '',
+              },
             },
           };
         }
@@ -352,18 +459,30 @@ export function fakeGql(state: FakeState): Gql {
           if (userId === state.viewer.id) return { ...state.viewer };
           const user = state.users.find((candidate) => candidate.id === userId);
           if (!user) throw new Error(`fake Linear has no user ${JSON.stringify(userId)}`);
-          return { id: user.id, name: user.name, displayName: user.displayName, ...(user.app ? { app: true } : {}) };
+          return {
+            id: user.id,
+            name: user.name,
+            displayName: user.displayName,
+            ...(user.app ? { app: true } : {}),
+          };
         };
         if ('assigneeId' in input) issue.assignee = person(input['assigneeId']);
         if ('delegateId' in input) issue.delegate = person(input['delegateId']);
-        if ('projectId' in input) issue.project = state.projects.find((project) => project.id === input['projectId']) ?? null;
+        if ('projectId' in input)
+          issue.project =
+            state.projects.find((project) => project.id === input['projectId']) ?? null;
         if (typeof input['title'] === 'string') issue.title = input['title'];
         if (typeof input['stateId'] === 'string') issue.stateId = input['stateId'];
         issue.updatedAt = tick(state);
         return {
           issueUpdate: {
             success: true,
-            issue: { id: issue.id, identifier: issue.identifier, updatedAt: issue.updatedAt, description: issue.description },
+            issue: {
+              id: issue.id,
+              identifier: issue.identifier,
+              updatedAt: issue.updatedAt,
+              description: issue.description,
+            },
           },
         };
       }
@@ -372,9 +491,19 @@ export function fakeGql(state: FakeState): Gql {
         if (input.issueId !== issue.id) {
           state.otherComments.push({ issueId: input.issueId, body: input.body });
           const id = `o-${String(state.otherComments.length)}`;
-          return { commentCreate: { success: true, comment: { id, url: `https://linear.app/x/comment/${id}`, createdAt: tick(state) } } };
+          return {
+            commentCreate: {
+              success: true,
+              comment: { id, url: `https://linear.app/x/comment/${id}`, createdAt: tick(state) },
+            },
+          };
         }
-        const comment = { id: `c-${state.comments.length + 1}`, body: input.body, createdAt: tick(state), userName: state.viewer.name };
+        const comment = {
+          id: `c-${state.comments.length + 1}`,
+          body: input.body,
+          createdAt: tick(state),
+          userName: state.viewer.name,
+        };
         state.comments.push(comment);
         return {
           commentCreate: {
@@ -412,6 +541,11 @@ export function touchWithoutContentChange(state: FakeState) {
 
 export function addComments(state: FakeState, count: number, from = 'human') {
   for (let i = 0; i < count; i++) {
-    state.comments.push({ id: `seed-${state.comments.length + 1}`, body: `comment ${i + 1}`, createdAt: tick(state), userName: from });
+    state.comments.push({
+      id: `seed-${state.comments.length + 1}`,
+      body: `comment ${i + 1}`,
+      createdAt: tick(state),
+      userName: from,
+    });
   }
 }

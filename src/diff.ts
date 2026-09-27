@@ -16,7 +16,8 @@ export function diffOps(before: string, after: string): DiffOp[] {
   const cell = (i: number, j: number) => table[i * width + j] ?? 0;
   for (let i = a.length - 1; i >= 0; i--) {
     for (let j = b.length - 1; j >= 0; j--) {
-      table[i * width + j] = a[i] === b[j] ? cell(i + 1, j + 1) + 1 : Math.max(cell(i + 1, j), cell(i, j + 1));
+      table[i * width + j] =
+        a[i] === b[j] ? cell(i + 1, j + 1) + 1 : Math.max(cell(i + 1, j), cell(i, j + 1));
     }
   }
 

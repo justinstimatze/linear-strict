@@ -23,7 +23,17 @@ export interface Rendered {
 // Matches the markdown Linear serialises into `description`: `*` bullets, `[X]` ticks, escaped
 // brackets, `<>`-wrapped link targets. A version rendered here then differs from the live
 // description only where the content does.
-const KNOWN_MARKS = new Set(['attribution', 'code', 'strong', 'bold', 'em', 'italic', 'strike', 'link', 'underline']);
+const KNOWN_MARKS = new Set([
+  'attribution',
+  'code',
+  'strong',
+  'bold',
+  'em',
+  'italic',
+  'strike',
+  'link',
+  'underline',
+]);
 
 export function renderMarkdown(doc: PmNode): Rendered {
   const unknown = new Set<string>();
@@ -80,7 +90,11 @@ export function renderMarkdown(doc: PmNode): Rendered {
           return [`${marker} ${first}`, ...rest.map((line) => (line === '' ? '' : `  ${line}`))];
         });
       case 'code_block':
-        return ['```' + (typeof node.attrs?.['language'] === 'string' ? node.attrs['language'] : ''), ...inline(node.content, true).split('\n'), '```'];
+        return [
+          '```' + (typeof node.attrs?.['language'] === 'string' ? node.attrs['language'] : ''),
+          ...inline(node.content, true).split('\n'),
+          '```',
+        ];
       case 'blockquote':
         return blocks(node.content).map((line) => `> ${line}`);
       case 'table':

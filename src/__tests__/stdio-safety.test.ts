@@ -27,7 +27,9 @@ describe('stdio safety', () => {
   it('does not use console.log in production source files', () => {
     const srcDir = path.resolve(process.cwd(), 'src');
     const sourceFiles = collectSourceFiles(srcDir);
-    const offenders = sourceFiles.filter((filePath) => fs.readFileSync(filePath, 'utf8').includes('console.log('));
+    const offenders = sourceFiles.filter((filePath) =>
+      fs.readFileSync(filePath, 'utf8').includes('console.log('),
+    );
 
     expect(offenders).toEqual([]);
   });

@@ -3,16 +3,28 @@ import { type PmNode, renderMarkdown } from '../prosemirror.js';
 import { StrictLinear } from '../strict-linear.js';
 import { type FakeState, fakeGql, fakeState } from './strict-fake-linear.helper.js';
 
-const text = (value: string, ...marks: string[]): PmNode => ({ type: 'text', text: value, marks: marks.map((type) => ({ type })) });
+const text = (value: string, ...marks: string[]): PmNode => ({
+  type: 'text',
+  text: value,
+  marks: marks.map((type) => ({ type })),
+});
 const para = (...content: PmNode[]): PmNode => ({ type: 'paragraph', content });
-const heading = (value: string): PmNode => ({ type: 'heading', attrs: { level: 2 }, content: [text(value)] });
+const heading = (value: string): PmNode => ({
+  type: 'heading',
+  attrs: { level: 2 },
+  content: [text(value)],
+});
 const bullets = (...lines: string[]): PmNode => ({
   type: 'bullet_list',
   content: lines.map((line) => ({ type: 'list_item', content: [para(text(line))] })),
 });
 const todos = (...items: [boolean, string][]): PmNode => ({
   type: 'todo_list',
-  content: items.map(([done, line]) => ({ type: 'todo_item', attrs: { done }, content: [para(text(line))] })),
+  content: items.map(([done, line]) => ({
+    type: 'todo_item',
+    attrs: { done },
+    content: [para(text(line))],
+  })),
 });
 const doc = (...content: PmNode[]): PmNode => ({ type: 'doc', content });
 
@@ -27,13 +39,34 @@ describe('renderMarkdown', () => {
         heading('Observed'),
         bullets('2026-09-01 · `a` · b'),
         todos([true, 'done'], [false, 'open']),
-        { type: 'paragraph', content: [{ type: 'text', text: 'docs', marks: [{ type: 'link', attrs: { href: 'https://example.com' } }] }] },
+        {
+          type: 'paragraph',
+          content: [
+            {
+              type: 'text',
+              text: 'docs',
+              marks: [{ type: 'link', attrs: { href: 'https://example.com' } }],
+            },
+          ],
+        },
         { type: 'code_block', attrs: { language: 'ts' }, content: [text('x = [1]; ~y')] },
         {
           type: 'table',
           content: [
-            { type: 'table_row', content: [{ type: 'table_header', content: [para(text('Q'))] }, { type: 'table_header', content: [para(text('A'))] }] },
-            { type: 'table_row', content: [{ type: 'table_cell', content: [para(text('one'))] }, { type: 'table_cell', content: [para(text('two'))] }] },
+            {
+              type: 'table_row',
+              content: [
+                { type: 'table_header', content: [para(text('Q'))] },
+                { type: 'table_header', content: [para(text('A'))] },
+              ],
+            },
+            {
+              type: 'table_row',
+              content: [
+                { type: 'table_cell', content: [para(text('one'))] },
+                { type: 'table_cell', content: [para(text('two'))] },
+              ],
+            },
           ],
         },
       ),
@@ -75,8 +108,18 @@ function setup(overrides: Partial<FakeState> = {}) {
   return { state, strict };
 }
 
-const v1 = doc(heading('Observed'), bullets('2026-09-01 · a · b'), heading('Done when'), todos([false, 'tests pass']));
-const v2 = doc(heading('Observed'), bullets('2026-09-01 · a · b', '2026-09-02 · c · d'), heading('Done when'), todos([true, 'tests pass · 12 passed']));
+const v1 = doc(
+  heading('Observed'),
+  bullets('2026-09-01 · a · b'),
+  heading('Done when'),
+  todos([false, 'tests pass']),
+);
+const v2 = doc(
+  heading('Observed'),
+  bullets('2026-09-01 · a · b', '2026-09-02 · c · d'),
+  heading('Done when'),
+  todos([true, 'tests pass · 12 passed']),
+);
 
 describe('description_history', () => {
   it('lists versions oldest first with who made each and what changed, skipping snapshots that changed no text', async () => {
@@ -97,7 +140,11 @@ describe('description_history', () => {
       by: ['Ada'],
       text: renderMarkdown(v1).markdown,
     });
-    expect(result.versions[1]).toMatchObject({ version: 2, at: '2026-09-02T00:00:00.000Z', by: ['agent-b', 'u-gone'] });
+    expect(result.versions[1]).toMatchObject({
+      version: 2,
+      at: '2026-09-02T00:00:00.000Z',
+      by: ['agent-b', 'u-gone'],
+    });
     const diff = (result.versions[1] as { diff: string }).diff;
     expect(diff).toContain('+ * 2026-09-02 · c · d');
     expect(diff).toContain('- - [ ] tests pass');
@@ -113,14 +160,25 @@ describe('description_history', () => {
       ],
     });
     state.issue.description = latest;
-    expect((await strict.descriptionHistory('ENG-1')).current).toEqual({ in_a_version: true, version: 2 });
+    expect((await strict.descriptionHistory('ENG-1')).current).toEqual({
+      in_a_version: true,
+      version: 2,
+    });
 
     state.issue.description = `${latest}\n- [ ] a newer item`;
     const result = await strict.descriptionHistory('ENG-1', { blame: true });
-    expect(result.current).toEqual({ in_a_version: false, diff_from_latest_version: expect.stringContaining('+ - [ ] a newer item') as unknown });
+    expect(result.current).toEqual({
+      in_a_version: false,
+      diff_from_latest_version: expect.stringContaining('+ - [ ] a newer item') as unknown,
+    });
     const blame = 'blame' in result ? result.blame : [];
     const line = (value: string) => blame.find((entry) => entry.line === value);
-    expect(line('* 2026-09-01 · a · b')).toEqual({ line: '* 2026-09-01 · a · b', version: 1, at: '2026-09-01T00:00:00.000Z', by: ['Ada'] });
+    expect(line('* 2026-09-01 · a · b')).toEqual({
+      line: '* 2026-09-01 · a · b',
+      version: 1,
+      at: '2026-09-01T00:00:00.000Z',
+      by: ['Ada'],
+    });
     expect(line('* 2026-09-02 · c · d')).toMatchObject({ version: 2, by: ['agent-b'] });
     expect(line('- [X] tests pass · 12 passed')).toMatchObject({ version: 2 });
     expect(line('- [ ] a newer item')).toEqual({ line: '- [ ] a newer item', version: null });

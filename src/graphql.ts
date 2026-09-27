@@ -72,7 +72,9 @@ export async function paginate<N>(
     omitted: [
       {
         field,
-        reason: stoppedBecause ?? `stopped after ${String(maxPages)} pages of ${String(pageSize)}; later ${field} were not fetched`,
+        reason:
+          stoppedBecause ??
+          `stopped after ${String(maxPages)} pages of ${String(pageSize)}; later ${field} were not fetched`,
         fetched: nodes.length,
       },
     ],
