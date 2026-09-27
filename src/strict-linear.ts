@@ -43,16 +43,16 @@ import {
   DESCRIPTION_DOC_QUERY,
   HISTORY_QUERY,
   INVERSE_RELATIONS_QUERY,
+  LIST_ISSUES_QUERY,
   ISSUE_CREATE,
   ISSUE_ID_QUERY,
   ISSUE_QUERY,
   ISSUE_UPDATE,
-  LIST_FIELDS,
   MARKER_DELETE,
   MARKER_UPSERT,
-  PAGE_INFO,
   RELATION_CREATE,
   RELATIONS_QUERY,
+  SEARCH_ISSUES_QUERY,
   TEAM_BY_KEY_QUERY,
   TEAM_STATES_QUERY,
   USERS_BY_ID_QUERY,
@@ -94,9 +94,14 @@ import {
   patchSummary,
   questionFor,
 } from './comment-rules.js';
+import {
+  type ListIssuesArgs,
+  type ListNode,
+  LIST_ISSUES_CAP,
+  listFilter,
+  listResult,
+} from './list-issues.js';
 import { checkDescopeArgs, checkNothingDropped, signOffRefusal } from './descope.js';
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * PR statuses in Linear's GitHub attachment metadata that mean not merged.
@@ -107,33 +112,6 @@ const NOT_MERGED = ['open', 'closed', 'draft'];
 
 /** Pages of issue history get_issue reads; see getIssue. */
 const HISTORY_PAGES = 2;
-
-interface ListNode {
-  identifier: string;
-  title: string;
-  updatedAt: string;
-  state: { name: string; type: string } | null;
-  assignee: { name: string } | null;
-  delegate: { name: string } | null;
-}
-
-export interface ListIssuesArgs {
-  query?: string | undefined;
-  team?: string | undefined;
-  state?: string | undefined;
-  assignee_is_me?: boolean | undefined;
-  delegate_is_me?: boolean | undefined;
-  /** Cycle number; needs team, since every team numbers its own cycles. */
-  cycle?: number | undefined;
-  /** Project name or id. */
-  project?: string | undefined;
-  /** Only tickets not in a completed or canceled state. */
-  open?: boolean | undefined;
-}
-
-/** Past this many matches list_issues refuses rather than return part of the set. */
-export const LIST_ISSUES_CAP = 2000;
-const LIST_COLUMNS = ['identifier', 'title', 'state', 'assignee', 'delegate', 'updatedAt'] as const;
 
 export interface ClaimArgs {
   as?: 'assignee' | 'delegate' | undefined;
@@ -791,42 +769,23 @@ export class StrictLinear {
     if (args.cycle !== undefined && !args.team)
       throw new Error('cycle needs team: each team numbers its own cycles');
 
-    const state = {
-      ...(args.state ? { name: { eqIgnoreCase: args.state } } : {}),
-      ...(args.open ? { type: { nin: ['completed', 'canceled'] } } : {}),
-    };
-    const filter = {
-      ...(args.team ? { team: { key: { eqIgnoreCase: args.team } } } : {}),
-      ...(Object.keys(state).length > 0 ? { state } : {}),
-      ...(args.assignee_is_me ? { assignee: { isMe: { eq: true } } } : {}),
-      ...(args.delegate_is_me ? { delegate: { isMe: { eq: true } } } : {}),
-      ...(args.cycle !== undefined ? { cycle: { number: { eq: args.cycle } } } : {}),
-      // Linear's id comparator accepts only a UUID, so a name has to go to the name comparator.
-      ...(args.project
-        ? {
-            project: UUID.test(args.project)
-              ? { id: { eq: args.project } }
-              : { name: { eqIgnoreCase: args.project } },
-          }
-        : {}),
-    };
+    const filter = listFilter(args);
 
     const fetchPage = async (after: string | null): Promise<Connection<ListNode>> => {
       if (args.query) {
-        const data = await this.gql<{ searchIssues: Connection<ListNode> }>(
-          `query StrictSearch($term: String!, $first: Int, $after: String, $filter: IssueFilter) {
-  searchIssues(term: $term, first: $first, after: $after, filter: $filter) { nodes { ${LIST_FIELDS} } ${PAGE_INFO} }
-}`,
-          { term: args.query, first: PAGE_SIZE, after, filter },
-        );
+        const data = await this.gql<{ searchIssues: Connection<ListNode> }>(SEARCH_ISSUES_QUERY, {
+          term: args.query,
+          first: PAGE_SIZE,
+          after,
+          filter,
+        });
         return data.searchIssues;
       }
-      const data = await this.gql<{ issues: Connection<ListNode> }>(
-        `query StrictList($first: Int, $after: String, $filter: IssueFilter) {
-  issues(first: $first, after: $after, filter: $filter, orderBy: updatedAt) { nodes { ${LIST_FIELDS} } ${PAGE_INFO} }
-}`,
-        { first: PAGE_SIZE, after, filter },
-      );
+      const data = await this.gql<{ issues: Connection<ListNode> }>(LIST_ISSUES_QUERY, {
+        first: PAGE_SIZE,
+        after,
+        filter,
+      });
       return data.issues;
     };
 
@@ -851,27 +810,7 @@ export class StrictLinear {
       after = connection.pageInfo.endCursor;
     }
 
-    const byState: Record<string, number> = {};
-    for (const node of nodes) {
-      const name = node.state?.name ?? '(none)';
-      byState[name] = (byState[name] ?? 0) + 1;
-    }
-    return {
-      total: nodes.length,
-      complete: true,
-      by_state: byState,
-      columns: LIST_COLUMNS,
-      rows: nodes.map((node) => [
-        node.identifier,
-        node.title,
-        node.state?.name ?? null,
-        node.assignee?.name ?? null,
-        node.delegate?.name ?? null,
-        node.updatedAt,
-      ]),
-      order: args.query ? 'search relevance' : 'most recently updated first',
-      note: `This is every matching ticket (${String(nodes.length)}). No descriptions here by design; read a ticket with get_issue before acting on it.`,
-    };
+    return listResult(nodes, args.query);
   }
 
   private async updateIssue(id: string, input: Record<string, unknown>) {

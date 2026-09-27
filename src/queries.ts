@@ -93,3 +93,11 @@ export const ISSUE_CREATE = `mutation StrictIssueCreate($input: IssueCreateInput
 }`;
 
 export const LIST_FIELDS = `identifier title updatedAt state { name type } assignee { name } delegate { name }`;
+
+export const SEARCH_ISSUES_QUERY = `query StrictSearch($term: String!, $first: Int, $after: String, $filter: IssueFilter) {
+  searchIssues(term: $term, first: $first, after: $after, filter: $filter) { nodes { ${LIST_FIELDS} } ${PAGE_INFO} }
+}`;
+
+export const LIST_ISSUES_QUERY = `query StrictList($first: Int, $after: String, $filter: IssueFilter) {
+  issues(first: $first, after: $after, filter: $filter, orderBy: updatedAt) { nodes { ${LIST_FIELDS} } ${PAGE_INFO} }
+}`;
