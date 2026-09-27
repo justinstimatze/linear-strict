@@ -485,6 +485,17 @@ function mentionResult(mention: Mention | null, askTo: string | undefined) {
   };
 }
 
+/**
+ * Index of the first comment the previous marker does not cover: the one after
+ * its comment, or, when that comment is gone, the first one written after it.
+ * -1 when every comment is older than the marker.
+ */
+function firstUncovered(ordered: MarkerNode[], previous: StoredMarker) {
+  const at = ordered.findIndex((comment) => comment.id === previous.through);
+  if (at >= 0) return at + 1;
+  return ordered.findIndex((comment) => comment.createdAt > previous.at);
+}
+
 export class StrictLinear {
   private readonly gql: Gql;
   private readonly claims: ClaimStore;
@@ -1340,70 +1351,9 @@ export class StrictLinear {
     this.checkBase(issue, base);
     const next = applySectionPatches(issue.description ?? '', patches);
 
-    let marker: Record<string, unknown> | null = null;
-    let moved: StoredMarker | undefined;
-    let accounting: ReturnType<typeof checkAccounting> | null = null;
-    if (reconciledThrough) {
-      const comments = await paginate<MarkerNode>(
-        'comments',
-        this.connection<MarkerNode>(
-          connectionQuery(
-            'comments',
-            'id createdAt editedAt body user { name displayName app } botActor { name } externalUser { name }',
-          ),
-          issue.id,
-          'comments',
-        ),
-      );
-      const [gap] = comments.omitted;
-      if (gap)
-        throw new Error(`Could not read every comment to check reconciled_through: ${gap.reason}`);
-      const ordered = [...comments.nodes].sort(
-        (a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
-      );
-      const index = ordered.findIndex((comment) => comment.id === reconciledThrough);
-      const through = ordered[index];
-      if (!through)
-        throw new Error(
-          `reconciled_through: ${reconciledThrough} is not a comment on ${issue.identifier}`,
-        );
-
-      const previous = findMarker(issue)?.marker ?? null;
-      const previousIndex = previous
-        ? ordered.findIndex((comment) => comment.id === previous.through)
-        : -1;
-      const start =
-        previousIndex >= 0
-          ? previousIndex + 1
-          : previous
-            ? ordered.findIndex((comment) => comment.createdAt > previous.at)
-            : 0;
-      if (start > index + 1 || (start === -1 && previous)) {
-        throw new Error(
-          `The description is already reconciled through a later comment (${previous?.through ?? 'unknown'}); reconciled_through cannot move back.`,
-        );
-      }
-      // Comments the previous marker already covered, edited since it was written, need accounting again.
-      const edited = previous
-        ? editedSince(ordered.slice(0, Math.max(start, 0)), previous.checked)
-        : [];
-      accounting = checkAccounting(
-        [...edited, ...ordered.slice(start, index + 1)],
-        accountsFor,
-        patches.length > 0,
-      );
-
-      const viewer = await this.viewer();
-      const written = {
-        through: through.id,
-        at: through.createdAt,
-        by: viewer.displayName || viewer.name,
-        checked: this.now().toISOString(),
-      };
-      moved = written;
-      const later = ordered.length - index - 1;
-      marker = later > 0 ? { ...written, comments_still_after: later } : written;
-    }
+    const reconciled = reconciledThrough
+      ? await this.reconcile(issue, reconciledThrough, accountsFor, patches.length > 0)
+      : null;
 
     const { dropped, note, signer, model } = await this.checkDescope(
       issue,
@@ -1417,45 +1367,23 @@ export class StrictLinear {
     const { written, unseenChange, markerWarning } = await this.writeDescription(
       issue,
       next,
-      moved,
+      reconciled?.moved,
     );
-    let descope: Record<string, unknown> | null = null;
-    if (dropped.length > 0 && descopeReason) {
-      const viewer = await this.viewer();
-      const label = viewer.app ? nameOf(viewer) : `agent via ${nameOf(viewer)}`;
-      const body = [
-        `🤖 ${label} · ${this.today()} · descope`,
-        '',
-        signer === 'judge'
-          ? `Dropped from Done when, approved by a model judge (${model ?? 'unknown model'}) standing in for the person, who was not asked:`
-          : `Dropped from Done when, with sign-off from the person at the client:`,
-        ...dropped.map((item) => `- ${item}`),
-        '',
-        `Reason: ${descopeReason.trim()}`,
-        ...(descopeRisk?.trim() ? ['', `What stops being checked: ${descopeRisk.trim()}`] : []),
-        ...(note ? ['', `${signer === 'judge' ? 'The judge wrote' : 'They wrote'}: ${note}`] : []),
-      ].join('\n');
-      try {
-        const comment = await this.postComment(issue.id, body);
-        descope = {
-          dropped,
-          reason: descopeReason.trim(),
-          signed_off: true,
-          signed_off_by: signer === 'judge' ? `judge (${model ?? 'unknown model'})` : 'person',
-          comment_url: comment.url,
-        };
-      } catch (error) {
-        throw new Error(
-          `The description was written without ${dropped.join('; ')}, but the descope comment recording the reason did not post: ${errorMessage(error)}. Post the reason with comment kind evidence.`,
-        );
-      }
-    }
+    const descope =
+      dropped.length > 0 && descopeReason
+        ? await this.postDescope(issue, dropped, descopeReason, descopeRisk, {
+            note,
+            signer,
+            model,
+          })
+        : null;
     return {
       identifier: issue.identifier,
-      updated_sections: patches.map((patch) => `${patch.section} (${patch.mode})`),
+      updated_sections: patchSummary(patches),
       description_sha: this.remember(written),
-      ...(marker ? { reconciled_through: marker } : {}),
-      ...(accounting ? { accounted: accounting } : {}),
+      ...(reconciled
+        ? { reconciled_through: reconciled.marker, accounted: reconciled.accounting }
+        : {}),
       ...(descope ? { descope } : {}),
       ...(markerWarning ? { marker_warning: markerWarning } : {}),
       ...uncitedWarning(issue.description ?? '', written),
@@ -1467,6 +1395,111 @@ export class StrictLinear {
           }
         : {}),
     };
+  }
+
+  /**
+   * Checks that reconciled_through names a comment at or after the current
+   * marker, and that every comment it newly covers is accounted for. Returns
+   * the marker to store; writes nothing.
+   */
+  private async reconcile(
+    issue: IssueCore,
+    reconciledThrough: string,
+    accountsFor: Accounting[],
+    hasPatch: boolean,
+  ) {
+    const comments = await paginate<MarkerNode>(
+      'comments',
+      this.connection<MarkerNode>(
+        connectionQuery(
+          'comments',
+          'id createdAt editedAt body user { name displayName app } botActor { name } externalUser { name }',
+        ),
+        issue.id,
+        'comments',
+      ),
+    );
+    const [gap] = comments.omitted;
+    if (gap)
+      throw new Error(`Could not read every comment to check reconciled_through: ${gap.reason}`);
+    const ordered = [...comments.nodes].sort(
+      (a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
+    );
+    const index = ordered.findIndex((comment) => comment.id === reconciledThrough);
+    const through = ordered[index];
+    if (!through)
+      throw new Error(
+        `reconciled_through: ${reconciledThrough} is not a comment on ${issue.identifier}`,
+      );
+
+    const previous = findMarker(issue)?.marker ?? null;
+    const start = previous ? firstUncovered(ordered, previous) : 0;
+    if (start > index + 1 || start === -1) {
+      throw new Error(
+        `The description is already reconciled through a later comment (${previous?.through ?? 'unknown'}); reconciled_through cannot move back.`,
+      );
+    }
+    // Comments the previous marker already covered, edited since it was written, need accounting again.
+    const edited = previous ? editedSince(ordered.slice(0, start), previous.checked) : [];
+    const accounting = checkAccounting(
+      [...edited, ...ordered.slice(start, index + 1)],
+      accountsFor,
+      hasPatch,
+    );
+
+    const viewer = await this.viewer();
+    const moved: StoredMarker = {
+      through: through.id,
+      at: through.createdAt,
+      by: viewer.displayName || viewer.name,
+      checked: this.now().toISOString(),
+    };
+    const later = ordered.length - index - 1;
+    const marker = later > 0 ? { ...moved, comments_still_after: later } : moved;
+    return { moved, marker, accounting };
+  }
+
+  /** Records an approved descope as a comment, naming who signed off and why. */
+  private async postDescope(
+    issue: IssueCore,
+    dropped: string[],
+    reason: string,
+    risk: string | undefined,
+    {
+      note,
+      signer,
+      model,
+    }: { note?: string | undefined; signer?: string | undefined; model?: string | undefined },
+  ) {
+    const viewer = await this.viewer();
+    const label = viewer.app ? nameOf(viewer) : `agent via ${nameOf(viewer)}`;
+    const judged = signer === 'judge';
+    const body = [
+      `🤖 ${label} · ${this.today()} · descope`,
+      '',
+      judged
+        ? `Dropped from Done when, approved by a model judge (${model ?? 'unknown model'}) standing in for the person, who was not asked:`
+        : `Dropped from Done when, with sign-off from the person at the client:`,
+      ...dropped.map((item) => `- ${item}`),
+      '',
+      `Reason: ${reason.trim()}`,
+      ...(risk?.trim() ? ['', `What stops being checked: ${risk.trim()}`] : []),
+      ...(note ? ['', `${judged ? 'The judge wrote' : 'They wrote'}: ${note}`] : []),
+    ].join('\n');
+    try {
+      const comment = await this.postComment(issue.id, body);
+      return {
+        dropped,
+        reason: reason.trim(),
+        signed_off: true,
+        signed_off_by: judged ? `judge (${model ?? 'unknown model'})` : 'person',
+        comment_url: comment.url,
+      };
+    } catch (error) {
+      throw new Error(
+        `The description was written without ${dropped.join('; ')}, but the descope comment recording the reason did not post: ${errorMessage(error)}. Post the reason with comment kind evidence.`,
+      );
+    }
   }
 
   /**
