@@ -25,7 +25,7 @@ First release as a standalone package.
 - A cited PR whose merge status Linear didn't record no longer refuses Done; the result names it.
 - `get_issue` reads the latest 200 history entries rather than all of them, and a description write that changes nothing is not sent.
 - The README and package say plainly that this is an unofficial project, not affiliated with Linear.
-- `npm install -g github:justinstimatze/linear-strict` is the install; it is not on npm.
+- Installs from the built package attached to each GitHub release (`npm install -g <release .tgz URL>`); it is not on npm.
 - `linear-strict auth login|status|logout`, an OAuth login with PKCE and token refresh, from `tacticlaunch/mcp-linear`.
 - An `Observed` line may carry a time after its date.
 - Done needs each ticked `Done when` item to cite what showed it: `- [x] item · <evidence>`, where evidence is a commit SHA, a PR, a file:line, a link, a CI run, `Observed N`, or a command and its result. A cited PR linked to the ticket must be merged.

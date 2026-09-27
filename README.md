@@ -45,14 +45,14 @@ Linear keeps full history, yet agents working from it drift:
 2. Add the server and the sign-off hooks:
 
    ```bash
-   npm install -g github:justinstimatze/linear-strict#v0.1.0
+   npm install -g https://github.com/justinstimatze/linear-strict/releases/download/v0.1.0/linear-strict-0.1.0.tgz
    claude mcp add linear-strict -e LINEAR_API_TOKEN=<token> -- linear-strict
    linear-strict install
    ```
 
 3. Reconnect with `/mcp`, then ask the agent to read a ticket.
 
-You need Node 20 or later. It installs from GitHub, not npm; npm builds it from source on install. To upgrade, run the same `npm install -g` with the new tag, then `linear-strict install` again and reconnect.
+You need Node 20 or later. Each [GitHub release](https://github.com/justinstimatze/linear-strict/releases) carries the built package; it is not on npm. To upgrade, `npm install -g` the newer release's `.tgz`, then run `linear-strict install` again and reconnect.
 
 To work on it, run it from a checkout instead:
 
