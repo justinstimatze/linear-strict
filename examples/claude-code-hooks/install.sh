@@ -20,7 +20,7 @@ set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 # The hooks run these scripts by path, and npm prunes its npx cache.
 if [[ "$here" == */_npx/* ]]; then
-  echo "Run this from a checkout or a global install (npm install -g linear-strict), not through npx: the hooks would point into npm's cache, which npm prunes." >&2
+  echo "Run this from a checkout or a global install of the release .tgz, not through npx: the hooks would point into npm's cache, which npm prunes." >&2
   exit 1
 fi
 mode=install
@@ -59,11 +59,15 @@ ours='(.matcher == "mcp__linear-strict__(get_issue|list_issues)") or ((.hooks //
 
 for dir in "$@"; do
   file="$dir/.claude/settings.local.json"
-  mkdir -p "$dir/.claude"
-  [[ -f "$file" ]] || echo '{}' >"$file"
-  if ! git -C "$dir" check-ignore -q "$file" 2>/dev/null; then
-    echo "$file is not gitignored in $dir; refusing to write hooks into a tracked file" >&2
+  # The hooks name this machine's paths, so they must not be committable. Outside git nothing is.
+  if git -C "$dir" rev-parse --git-dir >/dev/null 2>&1 && ! git -C "$dir" check-ignore -q "$file"; then
+    echo "$file is not gitignored, so these hooks, which hold this machine's paths, could be committed. Add .claude/settings.local.json to $dir/.gitignore and run this again." >&2
     exit 1
+  fi
+  if [[ ! -f "$file" ]]; then
+    [[ "$mode" == install ]] || { echo "$dir: not installed (no $file)"; continue; }
+    mkdir -p "$dir/.claude"
+    echo '{}' >"$file"
   fi
 
   case "$mode" in

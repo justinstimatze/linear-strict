@@ -21,7 +21,9 @@ STRICT_DENY_SERVERS='linear|linear-official' STRICT_GATES=linear-close-gate.sh e
 
 For `set_state` and `set_status`, `strict-gates.sh` fetches the ticket using the token in the project's `.mcp.json` under `linear-strict`. It applies patches with this repo's `dist/sections.js`, so run `npm run build` first.
 
-The hooks run these scripts by path, so run `install.sh` from a checkout or a global install (`npm install -g linear-strict`), not through npx, whose cache npm prunes. It refuses to run from there.
+The hooks run these scripts by path, so run `install.sh` from a checkout, or from a global install of the release `.tgz` (see the top-level README) at `"$(npm root -g)/linear-strict/examples/claude-code-hooks/install.sh"`. Not through npx, whose cache npm prunes; it refuses to run from there.
+
+In a git repo, `.claude/settings.local.json` has to be gitignored, since the hooks hold this machine's paths; the installer refuses otherwise and says what to add.
 
 These hooks are separate from the sign-off hooks `linear-strict install` adds to `~/.claude/settings.json`; the two can both be installed.
 
