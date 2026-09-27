@@ -4,6 +4,7 @@
 
 - Requires Node 22 or later. Node 20 reached end of life on 2026-04-30; CI now tests 22 and 24.
 - `npm test` checks Prettier formatting and runs knip for unused files, exports and dependencies; CI runs shellcheck on the hook scripts.
+- Development moves to TypeScript 6.0, ESLint 10 and Jest 30. Errors rethrown with a new message keep the original as `cause`.
 - An optional pre-commit hook (`git config core.hooksPath hooks`) runs a non-blocking CodeScene delta check.
 
 ## 0.1.0 — 2026-09-27

@@ -106,6 +106,7 @@ function load(file: string): Settings {
   } catch (error) {
     throw new Error(
       `${file} is not valid JSON, so nothing was changed: ${(error as Error).message}`,
+      { cause: error },
     );
   }
 }

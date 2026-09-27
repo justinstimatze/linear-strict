@@ -78,7 +78,9 @@ export function fileSignOffStore(dir = defaultSignOffDir()): SignOffStore {
       return JSON.parse(readFileSync(target, 'utf8'));
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
-      throw new Error(`Sign-off file ${target} is unreadable: ${(error as Error).message}`);
+      throw new Error(`Sign-off file ${target} is unreadable: ${(error as Error).message}`, {
+        cause: error,
+      });
     }
   };
   const write = (target: string, value: unknown) => {

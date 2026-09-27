@@ -52,7 +52,9 @@ export function fileClaimStore(file = defaultClaimsPath()): ClaimStore {
       return JSON.parse(readFileSync(file, 'utf8')) as Record<string, ClaimRecord>;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {};
-      throw new Error(`Claims file ${file} is unreadable: ${(error as Error).message}`);
+      throw new Error(`Claims file ${file} is unreadable: ${(error as Error).message}`, {
+        cause: error,
+      });
     }
   };
   const save = (records: Record<string, ClaimRecord>) => {

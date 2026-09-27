@@ -65,6 +65,7 @@ export function createStoredCredentialAuth(
       const reason = error instanceof Error ? error.message : 'unknown error';
       throw new Error(
         `Failed to refresh the stored Linear access token (${reason}). Run \`linear-strict auth login\` again.`,
+        { cause: error },
       );
     }
 

@@ -1,7 +1,7 @@
 {
   // Type-checks everything, tests and evals included; tsconfig.json builds only src.
   "extends": "./tsconfig.json",
-  "compilerOptions": { "noEmit": true, "rootDir": "." },
+  "compilerOptions": { "noEmit": true, "rootDir": ".", "types": ["node", "jest"] },
   "include": ["src/**/*", "evals/**/*.ts"],
   "exclude": ["node_modules"]
 }

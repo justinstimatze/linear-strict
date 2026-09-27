@@ -725,6 +725,7 @@ export class StrictLinear {
       } catch (error) {
         throw new Error(
           `Linear failed on page ${String(page)} after ${String(nodes.length)} tickets (${errorMessage(error)}). Nothing is returned, so part of the set can't pass for all of it; call list_issues again.`,
+          { cause: error },
         );
       }
       nodes.push(...connection.nodes);
@@ -901,6 +902,7 @@ export class StrictLinear {
         if (marker) {
           throw new Error(
             `The description was written, but the reconciled marker was not: ${errorMessage(error)}. The section patches landed. Repeat the call with reconciled_through and no patch to move the marker.`,
+            { cause: error },
           );
         }
         markerWarning = `The description was written, but its reconciled marker could not be updated (${errorMessage(error)}), so the next read may report the description as changed elsewhere.`;
@@ -1082,6 +1084,7 @@ export class StrictLinear {
     } catch (error) {
       throw new Error(
         `The description was written without ${dropped.join('; ')}, but the descope comment recording the reason did not post: ${errorMessage(error)}. Post the reason with comment kind evidence.`,
+        { cause: error },
       );
     }
   }
@@ -1213,6 +1216,7 @@ export class StrictLinear {
     } catch (error) {
       throw new Error(
         `The description patch landed but the comment did not post (${errorMessage(error)}). Retry the comment as kind "evidence" without a patch.`,
+        { cause: error },
       );
     }
     return {
@@ -1261,6 +1265,7 @@ export class StrictLinear {
     } catch (error) {
       throw new Error(
         `The comment posted (${comment.url}) but only [${steps.join(', ') || 'nothing'}] of [relation, description] landed: ${errorMessage(error)}`,
+        { cause: error },
       );
     }
     return {
@@ -1297,6 +1302,7 @@ export class StrictLinear {
     } catch (error) {
       throw new Error(
         `The comment posted (${comment.url}) but the Open questions row was not written: ${errorMessage(error)}. The description does not reflect this ${args.kind} yet.`,
+        { cause: error },
       );
     }
     return {
@@ -1338,6 +1344,7 @@ export class StrictLinear {
       } catch (error) {
         throw new Error(
           `${changed.length > 0 ? `The field changes landed (${changed.join(', ')})` : 'No field changes were asked for'}, and ${added.length > 0 ? `only ${added.join(', ')}` : 'none'} of the relations did before "${relation.label}" failed: ${errorMessage(error)}`,
+          { cause: error },
         );
       }
       added.push(relation.label);
@@ -1453,6 +1460,7 @@ export class StrictLinear {
     } catch (error) {
       throw new Error(
         `${issue.identifier} moved to ${stateName}, but the comment giving the reason did not post: ${errorMessage(error)}. Post it with comment kind evidence.`,
+        { cause: error },
       );
     }
   }
