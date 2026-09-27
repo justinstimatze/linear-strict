@@ -54,6 +54,7 @@ entries=$(jq -n --arg gates "$gates_cmd" --arg deny "$here/deny-other-linear-wri
 
 # An entry is ours when one of its commands names this directory, or when it is the strict-read
 # entry PRSTATE was installed as; that is how uninstall and reinstall find it again.
+# shellcheck disable=SC2016 # a jq program; $here is a jq variable, not a shell one
 ours='(.matcher == "mcp__linear-strict__(get_issue|list_issues)") or ((.hooks // []) | any(.command | contains($here)))'
 
 for dir in "$@"; do

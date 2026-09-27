@@ -18,13 +18,14 @@
     "start": "node dist/index.js",
     "typecheck": "tsc -p tsconfig.check.json",
     "lint": "eslint src evals",
-    "check": "npm run typecheck && npm run lint",
+    "check": "npm run typecheck && npm run lint && npm run format:check",
     "test": "npm run check && npm run test:unit && npm run test:mcp-smoke && npm run test:e2e",
     "test:unit": "NODE_OPTIONS=--experimental-vm-modules jest",
     "test:mcp-smoke": "npm run build && node scripts/mcp-smoke-test.mjs",
     "test:live": "npm run build && node scripts/live-test.mjs",
     "eval": "tsx evals/run.ts",
     "format": "prettier --write \"src/**/*.ts\" \"evals/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"evals/**/*.ts\"",
     "prepare": "npm run build",
     "test:e2e": "npm run build && node scripts/e2e/sign-off.mjs"
   },
@@ -67,6 +68,6 @@
     "typescript-eslint": "^8.70.1"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.0.0"
   }
 }

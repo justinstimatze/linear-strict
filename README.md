@@ -52,7 +52,7 @@ Linear keeps full history, yet agents working from it drift:
 
 3. Reconnect with `/mcp`, then ask the agent to read a ticket.
 
-You need Node 20 or later. Each [GitHub release](https://github.com/justinstimatze/linear-strict/releases) carries the built package; it is not on npm. To upgrade, `npm install -g` the newer release's `.tgz`, then run `linear-strict install` again and reconnect.
+You need Node 22 or later. Each [GitHub release](https://github.com/justinstimatze/linear-strict/releases) carries the built package; it is not on npm. To upgrade, `npm install -g` the newer release's `.tgz`, then run `linear-strict install` again and reconnect.
 
 To work on it, run it from a checkout instead:
 
@@ -182,7 +182,10 @@ npm run build
 node scripts/e2e/sign-off.mjs --live-judge  # the same, with the judge on the real API (one call, well under a cent)
 npm run test:live  # against a real workspace: creates temporary tickets on LIVE_TEAM and deletes them
 npm run eval       # a model works tickets in the fake Linear through the strict tools; graded on final state
+npm run format     # Prettier; `npm test` fails on unformatted code
 ```
+
+`git config core.hooksPath hooks` once, after cloning, turns on the tracked pre-commit hook: a non-blocking CodeScene delta check on staged changes when `cs` is on `PATH`. It warns and never blocks the commit.
 
 `npm run test:live` needs `LINEAR_API_TOKEN` and `LIVE_TEAM` (a team key). It writes to that workspace. `npm run eval` needs `ANTHROPIC_API_KEY`; `evals/README.md` covers cases, caching and results.
 
