@@ -187,12 +187,6 @@ export function signOffHookHealth(
   return health;
 }
 
-/** Whether the sign-off hooks are installed and can run. */
-export function signOffHooksInstalled(projectDir?: string): boolean {
-  const health = signOffHookHealth(projectDir);
-  return health.files.length > 0 && health.problems.length === 0;
-}
-
 /** `linear-strict install [--status | --uninstall]`. Returns the exit code. */
 export function runInstallCli(
   args: string[],

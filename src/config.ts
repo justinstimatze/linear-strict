@@ -85,16 +85,6 @@ export function isDebugLoggingEnabled(): boolean {
 }
 
 /**
- * Log initialization information
- * @param message The message to log
- */
-export function logInfo(message: string): void {
-  if (isDebugLoggingEnabled()) {
-    console.error(message);
-  }
-}
-
-/**
  * Log error information
  * @param message The error message
  * @param error The error object (optional)
