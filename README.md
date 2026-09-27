@@ -76,14 +76,13 @@ The two write different entries and can both be installed.
 
 ### Other clients
 
-Claude Desktop, in `claude_desktop_config.json`:
+Claude Desktop, in `claude_desktop_config.json`, after the global install above:
 
 ```json
 {
   "mcpServers": {
     "linear-strict": {
-      "command": "npx",
-      "args": ["-y", "linear-strict@0.1.0"],
+      "command": "linear-strict",
       "env": { "LINEAR_API_TOKEN": "<token>" }
     }
   }
@@ -119,8 +118,8 @@ The server can only enforce its rules on writes that go through it. If Linear's 
 `linear-strict auth login` signs in through the browser and stores a refreshing token, which the server uses when no token is set in its environment. It needs a Linear OAuth application of your own: create one at <https://linear.app/settings/api/applications/new> with the redirect URI `http://localhost:8734/callback`, then:
 
 ```bash
+linear-strict auth login --client-id <client id>        # global install
 node dist/index.js auth login --client-id <client id>   # from a checkout
-npx linear-strict@0.1.0 auth login --client-id <client id>   # once published
 ```
 
 The flow uses PKCE, so a client secret is optional. `auth status` shows whether you're signed in and when the token expires. `auth logout` revokes the token and deletes it. Credentials live in `$XDG_CONFIG_HOME/linear-strict/credentials.json`, readable only by you.
