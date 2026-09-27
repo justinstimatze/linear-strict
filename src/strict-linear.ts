@@ -61,10 +61,8 @@ import {
 import {
   addedChecks,
   CITING,
-  DESCOPE_LINE,
   doneWhenItems,
   droppedChecks,
-  REWORDING,
   uncitedWarning,
   UNTICKED,
 } from './done-when.js';
@@ -96,6 +94,7 @@ import {
   patchSummary,
   questionFor,
 } from './comment-rules.js';
+import { checkDescopeArgs, checkNothingDropped, signOffRefusal } from './descope.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -1238,83 +1237,25 @@ export class StrictLinear {
   ) {
     const dropped = droppedChecks(issue.description ?? '', next);
     if (dropped.length === 0) {
-      if (reason)
-        throw new Error(
-          'descope_reason was given, but this patch drops no unticked Done when item.',
-        );
-      if (token)
-        throw new Error('sign_off was given, but this patch drops no unticked Done when item.');
+      checkNothingDropped(reason, token);
       return { dropped, note: undefined, signer: undefined, model: undefined };
     }
-    const list = dropped.map((item) => `- [ ] ${item}`).join('\n');
-    if (via !== 'set_state') {
-      throw new Error(
-        `This patch drops unticked Done when items:\n${list}\n\nDrop or reword them with set_state and a descope_reason instead, so the person at the client can approve it.\n\n${REWORDING}`,
-      );
-    }
-    if (!reason?.trim()) {
-      throw new Error(
-        `This patch drops unticked Done when items:\n${list}\n\nRemoving or rewording a check that has not passed needs a reason and a yes from your user. Retry with descope_reason saying why it no longer applies; they will be asked to approve it.\n\n${REWORDING}`,
-      );
-    }
-    if (!risk?.trim()) {
-      throw new Error(
-        `This patch drops unticked Done when items:\n${list}\n\nYour user decides this from what you tell them, so descope_risk is needed too: what stops being checked if they approve, and what could get through because of it, in a sentence they can weigh without the ticket open. Retry with it.`,
-      );
-    }
-    const long = [
-      ['descope_reason', reason.trim()],
-      ['descope_risk', risk.trim()],
-    ].filter(([, text]) => (text ?? '').length > DESCOPE_LINE);
-    if (long.length > 0) {
-      throw new Error(
-        `Nothing was asked or written: ${long.map(([name, text]) => `${name ?? ''} is ${String((text ?? '').length)} characters`).join(' and ')}. Your user sees each on one line of about ${String(DESCOPE_LINE)} characters, so say it in that: the decision, not the story. Keep the detail in Observed or in the patch itself.`,
-      );
-    }
+    const { reason: why, risk: what } = checkDescopeArgs(dropped, via, reason, risk);
     const raw = this.signOff
       ? await this.signOff({
           identifier: issue.identifier,
           title: issue.title,
           dropped,
           added: addedChecks(issue.description ?? '', next),
-          reason: reason.trim(),
-          risk: risk.trim(),
+          reason: why,
+          risk: what,
           description: issue.description ?? '',
           token,
         })
       : 'unavailable';
     const answer: SignOffAnswer = typeof raw === 'string' ? { outcome: raw } : raw;
-    const { outcome, note, returned } = answer;
-    if (outcome === 'approved')
-      return { dropped, note, signer: answer.signer ?? 'person', model: answer.model };
-    const ask = `Nothing was written. Dropping these items needs sign-off:\n${list}`;
-    if (outcome === 'pending') throw new Error(`${ask}\n\n${answer.instructions ?? ''}`);
-    const said = note
-      ? `\n\n${answer.signer === 'judge' ? `The judge (${answer.model ?? 'a model'}) wrote` : 'They wrote'}: ${note}`
-      : '';
-    const client = returned ? `\n\nThe client returned ${returned}.` : '';
-    if (outcome === 'declined' && answer.signer === 'judge') {
-      throw new Error(
-        `The sign-off judge declined. ${ask}${said}\n\nDo the checks, put the evidence the judge asked for in Observed and retry, or leave the items for a person.`,
-      );
-    }
-    if (outcome === 'declined')
-      throw new Error(
-        `Your user declined. ${ask}${said}${client}\n\nDo the checks, or ask them what should change.`,
-      );
-    if (outcome === 'unanswered' && answer.signer === 'judge') {
-      throw new Error(
-        `The sign-off judge gave no verdict (${returned ?? 'no detail'}). ${ask}\n\nRetry in a while, or leave the items for a person.`,
-      );
-    }
-    if (outcome === 'unanswered') {
-      throw new Error(
-        `The approval request got no answer. ${ask}${client}\n\nThe form may still be on your user's screen, and an answer to it now reaches nothing. Tell them to dismiss it, ask whether they want to approve, and retry once they are there to answer.`,
-      );
-    }
-    throw new Error(
-      `This client cannot ask your user to approve it. ${ask}\n\nAsk a person to remove or reword the items in Linear; their edit is the sign-off. Then claim again.`,
-    );
+    if (answer.outcome !== 'approved') throw new Error(signOffRefusal(answer, dropped));
+    return { dropped, note: answer.note, signer: answer.signer ?? 'person', model: answer.model };
   }
 
   private async postComment(issueId: string, body: string) {
