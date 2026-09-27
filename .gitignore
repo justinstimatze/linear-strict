@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+
+# Build
+/dist
+/build
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor directories and files
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS files
+.DS_Store
+
+# Testing
+/coverage
+
+# Temporary files
+/tmp
+____*
+# Eval harness: response cache and per-run results
+evals/.cache/
+evals/results/

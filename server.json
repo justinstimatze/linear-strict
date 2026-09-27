@@ -1,0 +1,49 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.justinstimatze/linear-strict",
+  "title": "linear-strict",
+  "description": "Unofficial Linear MCP server: whole ticket reads, the description as state, rules enforced",
+  "repository": {
+    "url": "https://github.com/justinstimatze/linear-strict",
+    "source": "github"
+  },
+  "websiteUrl": "https://github.com/justinstimatze/linear-strict#readme",
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "linear-strict",
+      "version": "0.1.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "LINEAR_API_TOKEN",
+          "description": "Linear personal API key, or an agent (app) OAuth token starting lin_oauth_",
+          "isRequired": true,
+          "isSecret": true,
+          "format": "string"
+        },
+        {
+          "name": "LINEAR_STRICT_SIGN_OFF",
+          "description": "Who approves dropping an unticked Done when item: person (default) or judge",
+          "isRequired": false,
+          "format": "string",
+          "choices": [
+            "person",
+            "judge"
+          ],
+          "default": "person"
+        },
+        {
+          "name": "ANTHROPIC_API_KEY",
+          "description": "The judge's API key when LINEAR_STRICT_SIGN_OFF=judge, unless saved with `linear-strict auth judge-key set`",
+          "isRequired": false,
+          "isSecret": true,
+          "format": "string"
+        }
+      ]
+    }
+  ]
+}
