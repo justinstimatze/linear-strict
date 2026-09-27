@@ -22,193 +22,83 @@ import {
   uncitedTicks,
   listQuestions,
   nextQuestionId,
-  readMarker,
   stripMarker,
   readSection,
 } from './sections.js';
 import {
   type AttachmentNode,
-  type ReleaseNode,
   commentAuthorKind,
   pullRequests,
   shippedStateFindings,
 } from './facts.js';
 import { StrictWorkspace } from './workspace.js';
+import { MARKER_URL, MARKER_URLS, type StoredMarker, markerAttachmentInput } from './marker.js';
 import {
-  MARKER_URL,
-  MARKER_URLS,
-  type MarkerAttachment,
-  type StoredMarker,
-  markerAttachmentInput,
-  markerFromAttachment,
-} from './marker.js';
+  ATTACHMENTS_QUERY,
+  CHILDREN_QUERY,
+  COMMENT_CREATE,
+  COMMENTS_QUERY,
+  connectionQuery,
+  CONTENT_HISTORY_QUERY,
+  DESCRIPTION_DOC_QUERY,
+  HISTORY_QUERY,
+  INVERSE_RELATIONS_QUERY,
+  ISSUE_CREATE,
+  ISSUE_ID_QUERY,
+  ISSUE_QUERY,
+  ISSUE_UPDATE,
+  LIST_FIELDS,
+  MARKER_DELETE,
+  MARKER_UPSERT,
+  PAGE_INFO,
+  RELATION_CREATE,
+  RELATIONS_QUERY,
+  TEAM_BY_KEY_QUERY,
+  TEAM_STATES_QUERY,
+  USERS_BY_ID_QUERY,
+  VIEWER_QUERY,
+} from './queries.js';
+import {
+  addedChecks,
+  CITING,
+  DESCOPE_LINE,
+  doneWhenItems,
+  droppedChecks,
+  REWORDING,
+  uncitedWarning,
+  UNTICKED,
+} from './done-when.js';
+import {
+  authorName,
+  type IssueCore,
+  nameOf,
+  type Person,
+  personOut,
+  type Viewer,
+} from './issue-core.js';
+import {
+  type Accounting,
+  checkAccounting,
+  editedSince,
+  findMarker,
+  firstUncovered,
+  type FoundMarker,
+  isSelfApplied,
+  type MarkerNode,
+} from './reconcile.js';
+import {
+  checkCommentArgs,
+  type CommentArgs,
+  type CommentDraft,
+  commentLabel,
+  type Mention,
+  mentionResult,
+  patchSummary,
+  questionFor,
+} from './comment-rules.js';
 
-export const COMMENT_KINDS = ['evidence', 'correction', 'ask', 'answer', 'closed_by'] as const;
-export type CommentKind = (typeof COMMENT_KINDS)[number];
-
-/**
- * Typed comments whose effect on the description landed in the same call
- * that posted them, so they never need reconciling afterwards. evidence is
- * not here: its patch is optional.
- */
-// descope is written by set_state itself, never through the comment tool.
-const SELF_APPLIED: readonly string[] = ['correction', 'answer', 'closed_by', 'ask', 'descope'];
-
-/** How set_state accounts for one comment the reconciled marker moves past. */
-export interface Accounting {
-  /** A comment id, or "*" for every comment in range not named otherwise. */
-  comment: string;
-  how: 'folded' | 'no_state_change';
-  reason?: string | undefined;
-}
-
-interface Person {
-  id: string;
-  name: string;
-  displayName?: string;
-  app?: boolean | null;
-}
-
-interface Viewer extends Person {
-  app: boolean;
-}
-
-interface IssueCore {
-  id: string;
-  identifier: string;
-  title: string;
-  description: string | null;
-  url: string;
-  priority: number;
-  createdAt: string;
-  updatedAt: string;
-  archivedAt: string | null;
-  trashed?: boolean | null;
-  state: { id: string; name: string; type: string } | null;
-  team: { id: string; key: string; name: string } | null;
-  assignee: Person | null;
-  delegate: Person | null;
-  creator: Person | null;
-  parent: { id: string; identifier: string; title: string } | null;
-  project: { id: string; name: string } | null;
-  releases?: Connection<ReleaseNode>;
-  labels: Connection<{ id: string; name: string }>;
-  markerAttachment?: { nodes: MarkerAttachment[] };
-}
-
-/** Where a ticket's reconciled marker was found. */
-interface FoundMarker {
-  marker: StoredMarker;
-  in: 'attachment' | 'description';
-}
-
-function findMarker(issue: IssueCore): FoundMarker | null {
-  const nodes = issue.markerAttachment?.nodes ?? [];
-  const attached = markerFromAttachment(nodes.find((node) => node.url === MARKER_URL) ?? nodes[0]);
-  if (attached) return { marker: attached, in: 'attachment' };
-  // Written before the marker moved to an attachment; the next description write moves it.
-  const legacy = readMarker(issue.description ?? '');
-  return legacy ? { marker: legacy, in: 'description' } : null;
-}
-
-const MARKER_UPSERT = `mutation StrictMarkerUpsert($input: AttachmentCreateInput!) {
-  attachmentCreate(input: $input) { success attachment { id } }
-}`;
-const MARKER_DELETE = `mutation StrictMarkerDelete($id: String!) { attachmentDelete(id: $id) { success } }`;
-
-const PAGE_INFO = 'pageInfo { hasNextPage endCursor }';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const UNTICKED = /^[-*]\s+\[ \]\s+(.+)$/;
-const CHECK_ITEM = /^[-*]\s+\[[ xX]\]\s+(.+)$/;
-const TICKED_ITEM = /^[-*]\s+\[[xX]\]\s+(.+)$/;
 
-function doneWhenItems(description: string, pattern: RegExp): string[] {
-  return (readSection(description, 'Done when') ?? '')
-    .split('\n')
-    .map((line) => pattern.exec(line.trim())?.[1])
-    .filter((item): item is string => item !== undefined);
-}
-
-/**
- * Unticked Done when items in before whose text is gone from after, ticked or not. An item kept
- * word for word with a citation added after it, such as "(run 123)", is still the same check.
- */
-function droppedChecks(before: string, after: string): string[] {
-  const kept = doneWhenItems(after, CHECK_ITEM);
-  const survives = (item: string) =>
-    kept.some(
-      (line) =>
-        line === item || (line.startsWith(item) && /^[\s,;:.(—-]/.test(line.slice(item.length))),
-    );
-  return doneWhenItems(before, UNTICKED).filter((item) => !survives(item));
-}
-
-/**
- * Done when items in after whose text is not in before: what a rewording put
- * in place of a dropped item. A ticked one says so, since that changes what
- * approving it means.
- */
-function addedChecks(before: string, after: string): string[] {
-  const had = doneWhenItems(before, CHECK_ITEM);
-  const isNew = (item: string) => !had.some((line) => item === line || item.startsWith(line));
-  const ticked = new Set(doneWhenItems(after, TICKED_ITEM));
-  return doneWhenItems(after, CHECK_ITEM)
-    .filter(isNew)
-    .map((item) => (ticked.has(item) ? `${item} (already ticked)` : item));
-}
-
-const CITING =
-  'Add the evidence after each item\'s text with set_state, after " · ": a commit SHA, a PR (#123), a file:line, a link, a CI run, "Observed 2" for a line already under Observed, or `command` → result. If nothing showed it, untick it.';
-/**
- * Ticks a write leaves without a citation. The Done check refuses them, so
- * they are named when written, while the evidence is still at hand.
- */
-function uncitedWarning(before: string, after: string) {
-  const known = new Set(uncitedTicks(before).map(({ item }) => item));
-  const fresh = uncitedTicks(after).filter(({ item }) => !known.has(item));
-  if (fresh.length === 0) return {};
-  return {
-    uncited_ticks: fresh.map(({ item, reason }) => `- [x] ${item} (${reason})`),
-    cite_before_done: `Moving to Done will refuse ${fresh.length === 1 ? 'this tick' : 'these ticks'} until each cites its evidence. ${CITING}`,
-  };
-}
-
-/**
- * How long descope_reason and descope_risk may be. The sign-off form shows
- * each on one line, cut at the terminal's width, about this many characters
- * in a typical pane; past it the person decides on half a sentence.
- */
-export const DESCOPE_LINE = 100;
-
-const REWORDING =
-  'To cite evidence on an item, keep its text as it is and add the citation after it. If the check you ran is not the one an item names, do not tick the item as written: reword it with a descope_reason that says what you ran instead, or leave it open.';
-
-const ISSUE_CORE = `
-  id identifier title description url priority createdAt updatedAt archivedAt trashed
-  state { id name type }
-  team { id key name }
-  assignee { id name displayName app }
-  delegate { id name displayName }
-  creator { id name displayName }
-  parent { id identifier title }
-  project { id name }
-  releases(first: 20) { nodes { name version url completedAt stage { name type } } ${PAGE_INFO} }
-  labels(first: 100) { nodes { id name } ${PAGE_INFO} }
-  markerAttachment: attachments(first: 5, filter: { url: { in: ${JSON.stringify(MARKER_URLS)} } }) { nodes { id url metadata } }
-`;
-
-const ISSUE_QUERY = `query StrictIssue($id: String!) { issue(id: $id) { ${ISSUE_CORE} } }`;
-
-function connectionQuery(field: string, nodeFields: string) {
-  return `query StrictIssue_${field}($id: String!, $after: String) {
-  issue(id: $id) { ${field}(first: ${PAGE_SIZE}, after: $after) { nodes { ${nodeFields} } ${PAGE_INFO} } }
-}`;
-}
-
-const COMMENTS_QUERY = connectionQuery(
-  'comments',
-  'id body createdAt updatedAt editedAt url parent { id } user { id name displayName app } botActor { name } externalUser { name }',
-);
 /**
  * PR statuses in Linear's GitHub attachment metadata that mean not merged.
  * The values seen on a real workspace's ~1,000 PR attachments were open,
@@ -218,60 +108,6 @@ const NOT_MERGED = ['open', 'closed', 'draft'];
 
 /** Pages of issue history get_issue reads; see getIssue. */
 const HISTORY_PAGES = 2;
-const HISTORY_QUERY = connectionQuery(
-  'history',
-  'id createdAt updatedDescription actor { id name displayName } botActor { name }',
-);
-const RELATIONS_QUERY = connectionQuery('relations', 'id type relatedIssue { identifier title }');
-const INVERSE_RELATIONS_QUERY = connectionQuery(
-  'inverseRelations',
-  'id type issue { identifier title }',
-);
-const CHILDREN_QUERY = connectionQuery('children', 'identifier title state { name type }');
-const ATTACHMENTS_QUERY = connectionQuery(
-  'attachments',
-  'id title subtitle url createdAt sourceType metadata',
-);
-
-const DESCRIPTION_DOC_QUERY = `query StrictDescriptionDoc($id: String!) {
-  issue(id: $id) { id identifier description documentContent { id } }
-}`;
-const CONTENT_HISTORY_QUERY = `query StrictContentHistory($id: String!) {
-  documentContentHistory(id: $id) { success history { contentDataSnapshotAt actorIds contentData } }
-}`;
-const USERS_BY_ID_QUERY = `query StrictUsersById($ids: [ID!]) {
-  users(filter: { id: { in: $ids } }, includeDisabled: true, first: 100) { nodes { id name displayName } }
-}`;
-
-const VIEWER_QUERY = `query StrictViewer { viewer { id name displayName app } }`;
-
-const ISSUE_UPDATE = `mutation StrictIssueUpdate($id: String!, $input: IssueUpdateInput!) {
-  issueUpdate(id: $id, input: $input) { success issue { id identifier updatedAt description } }
-}`;
-
-const COMMENT_CREATE = `mutation StrictCommentCreate($input: CommentCreateInput!) {
-  commentCreate(input: $input) { success comment { id url createdAt } }
-}`;
-
-const TEAM_STATES_QUERY = `query StrictTeamStates($id: String!) {
-  issue(id: $id) { team { states(first: 100) { nodes { id name type } } } }
-}`;
-
-const ISSUE_ID_QUERY = `query StrictIssueId($id: String!) { issue(id: $id) { id identifier } }`;
-
-const RELATION_CREATE = `mutation StrictRelationCreate($input: IssueRelationCreateInput!) {
-  issueRelationCreate(input: $input) { success }
-}`;
-
-const TEAM_BY_KEY_QUERY = `query StrictTeamByKey($key: String!) {
-  teams(filter: { key: { eqIgnoreCase: $key } }) { nodes { id key name } }
-}`;
-
-const ISSUE_CREATE = `mutation StrictIssueCreate($input: IssueCreateInput!) {
-  issueCreate(input: $input) { success issue { id identifier url title } }
-}`;
-
-const LIST_FIELDS = `identifier title updatedAt state { name type } assignee { name } delegate { name }`;
 
 interface ListNode {
   identifier: string;
@@ -304,19 +140,6 @@ export interface ClaimArgs {
   as?: 'assignee' | 'delegate' | undefined;
   /** Take the assignment from the person who holds it, because they handed it over. */
   take_over?: boolean | undefined;
-}
-
-export interface CommentArgs {
-  kind: CommentKind;
-  body: string;
-  patch?: SectionPatch[] | undefined;
-  answers?: string | undefined;
-  ask_to?: string | undefined;
-  closed_by?: string | undefined;
-  relation?: 'duplicate' | 'fixed_there' | undefined;
-  author_label?: string | undefined;
-  /** description_sha of the description a patch was written against. */
-  base?: string | undefined;
 }
 
 export interface CreateIssueArgs {
@@ -381,17 +204,6 @@ export interface SignOffAnswer {
   model?: string | undefined;
 }
 
-function authorName(comment: {
-  user: Person | null;
-  botActor: { name: string } | null;
-  externalUser: { name: string } | null;
-}) {
-  if (comment.user) return comment.user.displayName || comment.user.name;
-  if (comment.botActor) return `${comment.botActor.name} (bot)`;
-  if (comment.externalUser) return `${comment.externalUser.name} (external)`;
-  return null;
-}
-
 /**
  * A short content hash of a description, as Linear stored it. get_issue
  * returns it, every description write returns the new one, and a write
@@ -403,98 +215,6 @@ export function descriptionSha(text: string) {
 
 /** How many descriptions a server remembers by hash, to diff a stale base against. */
 const REMEMBERED_DESCRIPTIONS = 500;
-
-function nameOf(person: Person) {
-  return person.displayName || person.name;
-}
-
-function personOut(person: Person | null) {
-  return person ? { id: person.id, name: nameOf(person) } : null;
-}
-
-type Mention = { url: string } | { unresolved: string };
-
-/** A comment with every check passed and its text composed, ready to post. */
-interface CommentDraft {
-  issue: IssueCore;
-  args: CommentArgs;
-  patch: SectionPatch[];
-  /** The description with the patch applied. */
-  description: string;
-  date: string;
-  label: string;
-  text: string;
-}
-
-/** Refuses argument combinations the kind doesn't allow, before anything is read. */
-function checkCommentArgs(args: CommentArgs, patch: SectionPatch[]) {
-  if (!COMMENT_KINDS.includes(args.kind))
-    throw new Error(`kind must be one of ${COMMENT_KINDS.join(', ')}`);
-  if (typeof args.body !== 'string' || args.body.trim() === '') throw new Error('body is empty');
-  if (args.kind === 'correction' && patch.length === 0) {
-    throw new Error(
-      'A correction must carry a description patch in the same call, so the description says the corrected thing and the thread cannot contradict it.',
-    );
-  }
-  if (args.kind === 'answer' && !args.answers) {
-    throw new Error('An answer must name the Open questions row it closes (answers: "Q3")');
-  }
-  if (args.kind !== 'answer' && args.answers)
-    throw new Error('answers is only valid with kind "answer"');
-  if (args.kind !== 'ask' && args.ask_to) throw new Error('ask_to is only valid with kind "ask"');
-  const closing = args.kind === 'closed_by';
-  if (closing && !(args.closed_by && args.relation)) {
-    throw new Error(
-      'closed_by needs closed_by (the ticket that carried the work) and relation ("duplicate" or "fixed_there")',
-    );
-  }
-  if (!closing && (args.closed_by || args.relation)) {
-    throw new Error('closed_by and relation are only valid with kind "closed_by"');
-  }
-}
-
-/** The Open questions row this comment writes: a new one for an ask, the named open one for an answer. */
-function questionFor(args: CommentArgs, description: string): string | null {
-  if (args.kind === 'ask') return nextQuestionId(description);
-  const answering = args.answers;
-  if (!answering) return null;
-  const row = listQuestions(description).find((candidate) => candidate.id === answering);
-  if (!row) throw new Error(`No question ${answering} under Open questions`);
-  if (!row.open) throw new Error(`${answering} is already answered: ${row.line}`);
-  return answering;
-}
-
-// An app identity is the agent, so its own name is the author. A user
-// token means an agent posting as a person; say so, so the thread never
-// reads as the person having typed it.
-function commentLabel(args: CommentArgs, viewer: Viewer) {
-  const agentName = args.author_label?.trim() || (viewer.app ? nameOf(viewer) : 'agent');
-  return viewer.app ? agentName : `${agentName} via ${nameOf(viewer)}`;
-}
-
-function patchSummary(patch: SectionPatch[]) {
-  return patch.map((p) => `${p.section} (${p.mode})`);
-}
-
-function mentionResult(mention: Mention | null, askTo: string | undefined) {
-  if (!mention) return {};
-  if ('url' in mention) return { ask_to_mentioned: true };
-  return {
-    ask_to_mentioned: false,
-    ask_to_note: `${askTo ?? ''} was written as text and not notified: ${mention.unresolved}`,
-  };
-}
-
-/**
- * Index of the first comment the previous marker does not cover: the one after
- * its comment, or, when that comment is gone, the first one written after it.
- * -1 when every comment is older than the marker.
- */
-function firstUncovered(ordered: MarkerNode[], previous: StoredMarker) {
-  const at = ordered.findIndex((comment) => comment.id === previous.through);
-  if (at >= 0) return at + 1;
-  return ordered.findIndex((comment) => comment.createdAt > previous.at);
-}
 
 export class StrictLinear {
   private readonly gql: Gql;
@@ -1983,109 +1703,4 @@ export class StrictLinear {
     if (!data.issueCreate.success) throw new Error('Linear reported issueCreate as unsuccessful');
     return data.issueCreate.issue;
   }
-}
-
-interface MarkerNode {
-  id: string;
-  createdAt: string;
-  editedAt?: string | null;
-  body: string;
-  user: { name: string; displayName?: string; app?: boolean | null } | null;
-  botActor: { name: string | null } | null;
-  externalUser: { name: string } | null;
-}
-
-function isSelfApplied(body: string): boolean {
-  const kind = commentKind(body);
-  return kind !== null && SELF_APPLIED.includes(kind);
-}
-
-/**
- * Every comment the reconciled marker moves past has to close one named way:
- * a typed comment that already changed the description, a comment folded
- * into a patch in this same call, or one the caller says changes nothing,
- * with a reason. Moving the marker is otherwise a way to skip a correction.
- */
-/** Comments edited after a time. With no time on record, nothing can be dated, so none are returned. */
-function editedSince<C extends { editedAt?: string | null }>(
-  comments: C[],
-  since: string | null | undefined,
-): C[] {
-  if (!since) return [];
-  return comments.filter(
-    (comment) => typeof comment.editedAt === 'string' && comment.editedAt > since,
-  );
-}
-
-function checkAccounting(range: MarkerNode[], accountsFor: Accounting[], hasPatches: boolean) {
-  const inRange = new Set(range.map((comment) => comment.id));
-  const named = new Map<string, Accounting>();
-  let wildcard: Accounting | null = null;
-  const problems: string[] = [];
-
-  for (const entry of accountsFor) {
-    if (entry.how === 'no_state_change' && !entry.reason?.trim()) {
-      problems.push(`${entry.comment}: no_state_change needs a reason`);
-    }
-    if (entry.comment === '*') wildcard = entry;
-    else if (!inRange.has(entry.comment))
-      problems.push(`${entry.comment} is not between the previous marker and reconciled_through`);
-    else named.set(entry.comment, entry);
-  }
-
-  const selfApplied: string[] = [];
-  const folded: string[] = [];
-  const quiet: { comment: string; author: string | null; author_kind: string; reason: string }[] =
-    [];
-  const missing: string[] = [];
-  for (const comment of range) {
-    if (isSelfApplied(comment.body)) {
-      selfApplied.push(comment.id);
-      continue;
-    }
-    const entry = named.get(comment.id) ?? wildcard;
-    if (!entry) {
-      missing.push(comment.id);
-      continue;
-    }
-    if (entry.how === 'folded') {
-      folded.push(comment.id);
-    } else {
-      const author = commentAuthorKind(comment);
-      quiet.push({
-        comment: comment.id,
-        author: comment.user
-          ? comment.user.displayName || comment.user.name
-          : (comment.botActor?.name ?? comment.externalUser?.name ?? null),
-        author_kind: author.kind,
-        reason: entry.reason ?? '',
-      });
-    }
-  }
-
-  if (folded.length > 0 && !hasPatches) {
-    problems.push(
-      `${String(folded.length)} comment(s) marked folded, but this call carries no patch to fold them into`,
-    );
-  }
-  if (missing.length > 0) {
-    problems.push(
-      `not accounted for: ${missing.join(', ')}. Add each to accounts_for as {comment, how: "folded"} (with the patch in this call) or {comment, how: "no_state_change", reason}; {comment: "*", ...} covers the rest.`,
-    );
-  }
-  if (problems.length > 0)
-    throw new Error(`reconciled_through would skip comments:\n- ${problems.join('\n- ')}`);
-
-  const people = quiet.filter((entry) => entry.author_kind === 'person');
-  return {
-    self_applied: selfApplied.length,
-    folded: folded.length,
-    no_state_change: quiet,
-    ...(people.length > 0
-      ? {
-          review:
-            "Comments by people were marked as changing nothing. A person's comment is often the only first-hand record on a ticket; check these were not decisions or corrections.",
-        }
-      : {}),
-  };
 }

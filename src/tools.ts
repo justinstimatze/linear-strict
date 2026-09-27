@@ -1,12 +1,9 @@
 import type { FieldChanges } from './fields.js';
 import type { SectionPatch } from './sections.js';
 import { IMPACT, PATCHABLE_SECTIONS } from './sections.js';
-import {
-  type Accounting,
-  COMMENT_KINDS,
-  type CommentKind,
-  type StrictLinear,
-} from './strict-linear.js';
+import { COMMENT_KINDS, type CommentKind } from './comment-rules.js';
+import type { Accounting } from './reconcile.js';
+import type { StrictLinear } from './strict-linear.js';
 import { CYCLE_WHEN, type CycleWhen } from './workspace.js';
 
 /**
