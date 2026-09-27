@@ -1,0 +1,46 @@
+name: Release
+
+# A v* tag publishes a GitHub release carrying the built package, which is how
+# linear-strict installs: npm install -g <the release's .tgz URL>. It is not on npm.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - name: Check the tag matches package.json
+        run: |
+          version=$(node -p "require('./package.json').version")
+          [ "v$version" = "$GITHUB_REF_NAME" ] || { echo "tag $GITHUB_REF_NAME does not match package.json $version"; exit 1; }
+      - name: Pack
+        run: npm pack
+      - name: Notes from the changelog
+        run: |
+          node -e '
+            const text = require("fs").readFileSync("CHANGELOG.md", "utf8");
+            const version = process.env.GITHUB_REF_NAME.slice(1);
+            const start = text.indexOf(`## ${version} `);
+            if (start < 0) { console.error(`CHANGELOG.md has no ## ${version} section`); process.exit(1); }
+            const rest = text.slice(start).split("\n").slice(1).join("\n");
+            const end = rest.search(/^## /m);
+            const url = `https://github.com/${process.env.GITHUB_REPOSITORY}/releases/download/${process.env.GITHUB_REF_NAME}/linear-strict-${version}.tgz`;
+            const body = (end < 0 ? rest : rest.slice(0, end)).trim();
+            require("fs").writeFileSync("notes.md", `${body}\n\nInstall: \`npm install -g ${url}\`, then \`linear-strict install\`. See the README for setup.\n`);
+          '
+      - name: Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "$GITHUB_REF_NAME" linear-strict-*.tgz --title "linear-strict ${GITHUB_REF_NAME#v}" --notes-file notes.md --verify-tag

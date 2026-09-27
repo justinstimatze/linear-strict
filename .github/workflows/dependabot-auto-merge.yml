@@ -1,0 +1,37 @@
+name: dependabot-auto-merge
+# Auto-merge Dependabot PRs after the `ci` workflow passes — CI-gated WITHOUT relying on branch
+# protection (main has no required status checks). `workflow_run` fires only after `ci` concludes; we
+# merge the associated Dependabot PR if CI succeeded and the bump is NOT a major (parsed from the PR
+# title; an unparseable/grouped title is left for manual review). Standalone, so it adds auto-merge
+# without changing ci.yml or any other setting.
+on:
+  workflow_run:
+    workflows: ["ci"]
+    types: [completed]
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  automerge:
+    if: >
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.actor.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Merge the PR if CI passed and it's a non-major bump
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          set -euo pipefail
+          pr=$(gh pr list --repo "$REPO" --head "$BRANCH" --state open --json number,title --jq '.[0] // empty')
+          [ -n "$pr" ] || { echo "no open PR for $BRANCH"; exit 0; }
+          num=$(echo "$pr" | jq -r .number); title=$(echo "$pr" | jq -r .title)
+          from=$(echo "$title" | sed -nE 's/.* from ([0-9]+)\.[0-9].* to .*/\1/p')
+          to=$(echo "$title"   | sed -nE 's/.* to ([0-9]+)\.[0-9].*/\1/p')
+          if [ -z "$from" ] || [ -z "$to" ]; then echo "unparseable title, manual: $title"; exit 0; fi
+          if [ "$from" != "$to" ]; then echo "major bump $from->$to, manual: $title"; exit 0; fi
+          echo "merging #$num: $title"
+          gh pr merge "$num" --repo "$REPO" --squash --delete-branch
