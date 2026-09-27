@@ -25,14 +25,9 @@ import {
   stripMarker,
   readSection,
 } from './sections.js';
-import {
-  type AttachmentNode,
-  commentAuthorKind,
-  pullRequests,
-  shippedStateFindings,
-} from './facts.js';
+import { type AttachmentNode, pullRequests, shippedStateFindings } from './facts.js';
 import { StrictWorkspace } from './workspace.js';
-import { MARKER_URL, MARKER_URLS, type StoredMarker, markerAttachmentInput } from './marker.js';
+import { MARKER_URL, type StoredMarker, markerAttachmentInput } from './marker.js';
 import {
   ATTACHMENTS_QUERY,
   CHILDREN_QUERY,
@@ -66,14 +61,7 @@ import {
   uncitedWarning,
   UNTICKED,
 } from './done-when.js';
-import {
-  authorName,
-  type IssueCore,
-  nameOf,
-  type Person,
-  personOut,
-  type Viewer,
-} from './issue-core.js';
+import { type IssueCore, nameOf, personOut, type Viewer } from './issue-core.js';
 import {
   type Accounting,
   checkAccounting,
@@ -101,6 +89,19 @@ import {
   listFilter,
   listResult,
 } from './list-issues.js';
+import {
+  type ChildNode,
+  type CommentNode,
+  type HistoryNode,
+  type InverseRelationNode,
+  type RelationNode,
+  cappedFields,
+  commentOut,
+  descriptionEdits,
+  otherAttachments,
+  relationsOut,
+  releasesOut,
+} from './issue-read.js';
 import { checkDescopeArgs, checkNothingDropped, signOffRefusal } from './descope.js';
 
 /**
@@ -335,26 +336,6 @@ export class StrictLinear {
     const issue = await this.core(id);
     const viewer = await this.viewer();
 
-    interface CommentNode {
-      id: string;
-      body: string;
-      createdAt: string;
-      updatedAt: string;
-      editedAt: string | null;
-      url: string;
-      parent: { id: string } | null;
-      user: (Person & { app: boolean | null }) | null;
-      botActor: { name: string } | null;
-      externalUser: { name: string } | null;
-    }
-    interface HistoryNode {
-      id: string;
-      createdAt: string;
-      updatedDescription: boolean | null;
-      actor: Person | null;
-      botActor: { name: string } | null;
-    }
-
     // Comments are the point of this read, so a failed first page fails the
     // call rather than degrading to a description-only answer.
     const [comments, history, relations, inverse, children, attachments] = await Promise.all([
@@ -372,21 +353,9 @@ export class StrictLinear {
         HISTORY_PAGES,
         `only the latest ${String(HISTORY_PAGES * PAGE_SIZE)} history entries were read; description_edits lists the edits among them, and description_history has every version`,
       ),
-      this.soft<{ id: string; type: string; relatedIssue: { identifier: string; title: string } }>(
-        'relations',
-        RELATIONS_QUERY,
-        issue.id,
-      ),
-      this.soft<{ id: string; type: string; issue: { identifier: string; title: string } }>(
-        'inverseRelations',
-        INVERSE_RELATIONS_QUERY,
-        issue.id,
-      ),
-      this.soft<{
-        identifier: string;
-        title: string;
-        state: { name: string; type: string } | null;
-      }>('children', CHILDREN_QUERY, issue.id),
+      this.soft<RelationNode>('relations', RELATIONS_QUERY, issue.id),
+      this.soft<InverseRelationNode>('inverseRelations', INVERSE_RELATIONS_QUERY, issue.id),
+      this.soft<ChildNode>('children', CHILDREN_QUERY, issue.id),
       this.soft<AttachmentNode>('attachments', ATTACHMENTS_QUERY, issue.id),
     ]);
 
@@ -397,21 +366,8 @@ export class StrictLinear {
       ...inverse.omitted,
       ...children.omitted,
       ...attachments.omitted,
+      ...cappedFields(issue),
     ];
-    if (issue.releases?.pageInfo.hasNextPage) {
-      omitted.push({
-        field: 'releases',
-        reason: 'more than 20 releases; later releases were not fetched',
-        fetched: 20,
-      });
-    }
-    if (issue.labels.pageInfo.hasNextPage) {
-      omitted.push({
-        field: 'labels',
-        reason: 'more than 100 labels; later labels were not fetched',
-        fetched: 100,
-      });
-    }
 
     const sortedComments = [...comments.nodes].sort(
       (a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
@@ -446,59 +402,14 @@ export class StrictLinear {
           .filter((row) => row.open)
           .map((row) => row.line),
       },
-      comments: sortedComments.map((comment) => ({
-        id: comment.id,
-        createdAt: comment.createdAt,
-        author: authorName(comment),
-        ...(({ kind, basis }) => ({ author_kind: kind, author_kind_basis: basis }))(
-          commentAuthorKind(comment),
-        ),
-        edited_after_posting: comment.editedAt !== null,
-        editedAt: comment.editedAt,
-        parentId: comment.parent?.id ?? null,
-        url: comment.url,
-        body: comment.body,
-      })),
+      comments: sortedComments.map(commentOut),
       comment_order: 'oldest first, by createdAt',
-      description_edits: history.nodes
-        .filter((entry) => entry.updatedDescription)
-        .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-        .map((entry) => ({
-          at: entry.createdAt,
-          by: entry.actor
-            ? entry.actor.displayName || entry.actor.name
-            : (entry.botActor?.name ?? null),
-        })),
-      relations: [
-        ...relations.nodes.map((r) => ({
-          type: r.type,
-          direction: 'outgoing',
-          issue: r.relatedIssue,
-        })),
-        ...inverse.nodes.map((r) => ({ type: r.type, direction: 'incoming', issue: r.issue })),
-      ],
+      description_edits: descriptionEdits(history.nodes),
+      relations: relationsOut(relations.nodes, inverse.nodes),
       children: children.nodes,
       pull_requests: prs,
-      releases: (issue.releases?.nodes ?? []).map((release) => ({
-        name: release.name,
-        version: release.version,
-        stage: release.stage?.name ?? null,
-        completed: release.stage?.type === 'completed',
-        url: release.url,
-      })),
-      attachments: attachments.nodes
-        .filter(
-          (attachment) =>
-            !MARKER_URLS.includes(attachment.url) && !prs.some((pr) => pr.url === attachment.url),
-        )
-        .map(({ id: attachmentId, title, subtitle, url, createdAt, sourceType }) => ({
-          id: attachmentId,
-          title,
-          subtitle,
-          url,
-          createdAt,
-          sourceType,
-        })),
+      releases: releasesOut(issue.releases?.nodes ?? []),
+      attachments: otherAttachments(attachments.nodes, prs),
       claim: claim ? this.claimStatus(claim, description) : null,
       findings: [
         ...lintForState(description, issue.state?.type ?? null),
