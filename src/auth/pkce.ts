@@ -2,10 +2,12 @@
 import { createHash, randomBytes } from 'node:crypto';
 
 /**
- * RFC 7636 unreserved characters allowed in a PKCE code verifier.
+ * Random bytes behind a verifier. RFC 7636 section 4.1 recommends 32 octets,
+ * base64url-encoded, which gives 43 characters from its unreserved set with
+ * every character equally likely; mapping bytes onto the 66-character set with
+ * % would favour some characters, since 256 is not a multiple of 66.
  */
-const VERIFIER_CHARSET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
-const VERIFIER_LENGTH = 64;
+const VERIFIER_BYTES = 32;
 
 export interface PkcePair {
   verifier: string;
@@ -16,11 +18,7 @@ export interface PkcePair {
  * Generate a cryptographically random PKCE code verifier and its S256 challenge.
  */
 export function generatePkcePair(): PkcePair {
-  const bytes = randomBytes(VERIFIER_LENGTH);
-  let verifier = '';
-  for (let i = 0; i < VERIFIER_LENGTH; i++) {
-    verifier += VERIFIER_CHARSET.charAt((bytes[i] ?? 0) % VERIFIER_CHARSET.length);
-  }
+  const verifier = randomBytes(VERIFIER_BYTES).toString('base64url');
 
   const challenge = createHash('sha256').update(verifier).digest('base64url');
 
