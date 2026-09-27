@@ -1506,45 +1506,8 @@ export class StrictLinear {
       );
     }
 
-    let unchecked: string[] = [];
-    if (target.type === 'completed') {
-      const doneWhen = readSection(issue.description ?? '', 'Done when');
-      if (!doneWhen?.trim()) {
-        throw new Error(
-          `Refusing to move ${issue.identifier} to ${target.name}: the description has no Done when section, so nothing says what finished means. Add one with set_state (checklist items that each name the check that proves it), then retry.`,
-        );
-      }
-      const claim = this.claims.get(issue.id, viewer.id);
-      if (!claim) {
-        throw new Error(
-          `Refusing to move ${issue.identifier} to ${target.name}: no claim by ${viewer.name} is recorded, so there is nothing to check the description against. Claim it, re-read it, then retry.`,
-        );
-      }
-      const status = this.claimStatus(claim, issue.description ?? '');
-      if (status.edited_since_claim) {
-        throw new Error(
-          `Refusing to move ${issue.identifier} to ${target.name}: the description changed since your claim at ${claim.claimedAt}. Check the work against it, then claim again to acknowledge it.\n\n${status.diff_since_claim}`,
-        );
-      }
-      const open = doneWhenItems(issue.description ?? '', UNTICKED);
-      if (open.length > 0) {
-        throw new Error(
-          `Refusing to move ${issue.identifier} to ${target.name}: ${String(open.length)} Done when item${open.length === 1 ? ' is' : 's are'} not ticked:\n${open.map((item) => `- [ ] ${item}`).join('\n')}\n\nRun each check, add what it showed to Observed, and tick the item with set_state (replace the Done when section). If an item no longer applies, drop it with set_state and a descope_reason; your user is asked to approve it.`,
-        );
-      }
-      const uncited = uncitedTicks(issue.description ?? '');
-      if (uncited.length > 0) {
-        throw new Error(
-          `Refusing to move ${issue.identifier} to ${target.name}: ${String(uncited.length)} ticked Done when item${uncited.length === 1 ? ' does' : 's do'} not cite what showed ${uncited.length === 1 ? 'it' : 'them'} true:\n${uncited.map(({ item, reason }) => `- [x] ${item} (${reason})`).join('\n')}\n\n${CITING}`,
-        );
-      }
-      unchecked = await this.citedPullRequestsMerged(
-        issue.id,
-        issue.identifier,
-        target.name,
-        issue.description ?? '',
-      );
-    }
+    const unchecked =
+      target.type === 'completed' ? await this.checkDoneGate(issue, target.name, viewer) : [];
 
     // Canceling ends the work without the Done checks, so it has to say why, where people will read it.
     const why = reason?.trim();
@@ -1557,22 +1520,7 @@ export class StrictLinear {
     const updated = await this.updateIssue(issue.id, { stateId: target.id });
     if (target.type === 'completed' || target.type === 'canceled')
       this.claims.delete(issue.id, viewer.id);
-    let reasonComment: string | null = null;
-    if (why) {
-      const label = viewer.app ? nameOf(viewer) : `agent via ${nameOf(viewer)}`;
-      try {
-        reasonComment = (
-          await this.postComment(
-            issue.id,
-            `🤖 ${label} · ${this.today()} · ${target.name}\n\n${why}`,
-          )
-        ).url;
-      } catch (error) {
-        throw new Error(
-          `${issue.identifier} moved to ${target.name}, but the comment giving the reason did not post: ${errorMessage(error)}. Post it with comment kind evidence.`,
-        );
-      }
-    }
+    const reasonComment = why ? await this.postStateReason(issue, target.name, why, viewer) : null;
     return {
       identifier: issue.identifier,
       state: target.name,
@@ -1584,6 +1532,64 @@ export class StrictLinear {
           }
         : {}),
     };
+  }
+
+  /**
+   * The Done gate: a Done when section, a claim by this caller that has seen
+   * the current description, every item ticked with a citation, and every
+   * cited PR merged. Returns the cited PRs whose merge status is unknown.
+   */
+  private async checkDoneGate(issue: IssueCore, stateName: string, viewer: Viewer) {
+    const doneWhen = readSection(issue.description ?? '', 'Done when');
+    if (!doneWhen?.trim()) {
+      throw new Error(
+        `Refusing to move ${issue.identifier} to ${stateName}: the description has no Done when section, so nothing says what finished means. Add one with set_state (checklist items that each name the check that proves it), then retry.`,
+      );
+    }
+    const claim = this.claims.get(issue.id, viewer.id);
+    if (!claim) {
+      throw new Error(
+        `Refusing to move ${issue.identifier} to ${stateName}: no claim by ${viewer.name} is recorded, so there is nothing to check the description against. Claim it, re-read it, then retry.`,
+      );
+    }
+    const status = this.claimStatus(claim, issue.description ?? '');
+    if (status.edited_since_claim) {
+      throw new Error(
+        `Refusing to move ${issue.identifier} to ${stateName}: the description changed since your claim at ${claim.claimedAt}. Check the work against it, then claim again to acknowledge it.\n\n${status.diff_since_claim}`,
+      );
+    }
+    const open = doneWhenItems(issue.description ?? '', UNTICKED);
+    if (open.length > 0) {
+      throw new Error(
+        `Refusing to move ${issue.identifier} to ${stateName}: ${String(open.length)} Done when item${open.length === 1 ? ' is' : 's are'} not ticked:\n${open.map((item) => `- [ ] ${item}`).join('\n')}\n\nRun each check, add what it showed to Observed, and tick the item with set_state (replace the Done when section). If an item no longer applies, drop it with set_state and a descope_reason; your user is asked to approve it.`,
+      );
+    }
+    const uncited = uncitedTicks(issue.description ?? '');
+    if (uncited.length > 0) {
+      throw new Error(
+        `Refusing to move ${issue.identifier} to ${stateName}: ${String(uncited.length)} ticked Done when item${uncited.length === 1 ? ' does' : 's do'} not cite what showed ${uncited.length === 1 ? 'it' : 'them'} true:\n${uncited.map(({ item, reason }) => `- [x] ${item} (${reason})`).join('\n')}\n\n${CITING}`,
+      );
+    }
+    return this.citedPullRequestsMerged(
+      issue.id,
+      issue.identifier,
+      stateName,
+      issue.description ?? '',
+    );
+  }
+
+  /** Posts why a ticket moved, as a comment on it. */
+  private async postStateReason(issue: IssueCore, stateName: string, why: string, viewer: Viewer) {
+    const label = viewer.app ? nameOf(viewer) : `agent via ${nameOf(viewer)}`;
+    try {
+      return (
+        await this.postComment(issue.id, `🤖 ${label} · ${this.today()} · ${stateName}\n\n${why}`)
+      ).url;
+    } catch (error) {
+      throw new Error(
+        `${issue.identifier} moved to ${stateName}, but the comment giving the reason did not post: ${errorMessage(error)}. Post it with comment kind evidence.`,
+      );
+    }
   }
 
   /**
