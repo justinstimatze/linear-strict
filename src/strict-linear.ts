@@ -412,6 +412,79 @@ function personOut(person: Person | null) {
   return person ? { id: person.id, name: nameOf(person) } : null;
 }
 
+type Mention = { url: string } | { unresolved: string };
+
+/** A comment with every check passed and its text composed, ready to post. */
+interface CommentDraft {
+  issue: IssueCore;
+  args: CommentArgs;
+  patch: SectionPatch[];
+  /** The description with the patch applied. */
+  description: string;
+  date: string;
+  label: string;
+  text: string;
+}
+
+/** Refuses argument combinations the kind doesn't allow, before anything is read. */
+function checkCommentArgs(args: CommentArgs, patch: SectionPatch[]) {
+  if (!COMMENT_KINDS.includes(args.kind))
+    throw new Error(`kind must be one of ${COMMENT_KINDS.join(', ')}`);
+  if (typeof args.body !== 'string' || args.body.trim() === '') throw new Error('body is empty');
+  if (args.kind === 'correction' && patch.length === 0) {
+    throw new Error(
+      'A correction must carry a description patch in the same call, so the description says the corrected thing and the thread cannot contradict it.',
+    );
+  }
+  if (args.kind === 'answer' && !args.answers) {
+    throw new Error('An answer must name the Open questions row it closes (answers: "Q3")');
+  }
+  if (args.kind !== 'answer' && args.answers)
+    throw new Error('answers is only valid with kind "answer"');
+  if (args.kind !== 'ask' && args.ask_to) throw new Error('ask_to is only valid with kind "ask"');
+  const closing = args.kind === 'closed_by';
+  if (closing && !(args.closed_by && args.relation)) {
+    throw new Error(
+      'closed_by needs closed_by (the ticket that carried the work) and relation ("duplicate" or "fixed_there")',
+    );
+  }
+  if (!closing && (args.closed_by || args.relation)) {
+    throw new Error('closed_by and relation are only valid with kind "closed_by"');
+  }
+}
+
+/** The Open questions row this comment writes: a new one for an ask, the named open one for an answer. */
+function questionFor(args: CommentArgs, description: string): string | null {
+  if (args.kind === 'ask') return nextQuestionId(description);
+  const answering = args.answers;
+  if (!answering) return null;
+  const row = listQuestions(description).find((candidate) => candidate.id === answering);
+  if (!row) throw new Error(`No question ${answering} under Open questions`);
+  if (!row.open) throw new Error(`${answering} is already answered: ${row.line}`);
+  return answering;
+}
+
+// An app identity is the agent, so its own name is the author. A user
+// token means an agent posting as a person; say so, so the thread never
+// reads as the person having typed it.
+function commentLabel(args: CommentArgs, viewer: Viewer) {
+  const agentName = args.author_label?.trim() || (viewer.app ? nameOf(viewer) : 'agent');
+  return viewer.app ? agentName : `${agentName} via ${nameOf(viewer)}`;
+}
+
+function patchSummary(patch: SectionPatch[]) {
+  return patch.map((p) => `${p.section} (${p.mode})`);
+}
+
+function mentionResult(mention: Mention | null, askTo: string | undefined) {
+  if (!mention) return {};
+  if ('url' in mention) return { ask_to_mentioned: true };
+  return {
+    ask_to_mentioned: false,
+    ask_to_note: `${askTo ?? ''} was written as text and not notified: ${mention.unresolved}`,
+  };
+}
+
 export class StrictLinear {
   private readonly gql: Gql;
   private readonly claims: ClaimStore;
@@ -1507,168 +1580,148 @@ export class StrictLinear {
    * is the state, and neither lands without the other.
    */
   async comment(id: string, args: CommentArgs) {
-    if (!COMMENT_KINDS.includes(args.kind))
-      throw new Error(`kind must be one of ${COMMENT_KINDS.join(', ')}`);
-    if (typeof args.body !== 'string' || args.body.trim() === '') throw new Error('body is empty');
     const patch = args.patch ?? [];
-
-    if (args.kind === 'correction' && patch.length === 0) {
-      throw new Error(
-        'A correction must carry a description patch in the same call, so the description says the corrected thing and the thread cannot contradict it.',
-      );
-    }
-    if (args.kind === 'answer' && !args.answers) {
-      throw new Error('An answer must name the Open questions row it closes (answers: "Q3")');
-    }
-    if (args.kind !== 'answer' && args.answers)
-      throw new Error('answers is only valid with kind "answer"');
-    if (args.kind !== 'ask' && args.ask_to) throw new Error('ask_to is only valid with kind "ask"');
-    if (args.kind === 'closed_by' && (!args.closed_by || !args.relation)) {
-      throw new Error(
-        'closed_by needs closed_by (the ticket that carried the work) and relation ("duplicate" or "fixed_there")',
-      );
-    }
-    if (args.kind !== 'closed_by' && (args.closed_by || args.relation)) {
-      throw new Error('closed_by and relation are only valid with kind "closed_by"');
-    }
+    checkCommentArgs(args, patch);
 
     const issue = await this.writable(id);
     this.checkBase(issue, args.base);
     const viewer = await this.viewer();
-    const date = this.today();
-    // An app identity is the agent, so its own name is the author. A user
-    // token means an agent posting as a person; say so, so the thread never
-    // reads as the person having typed it.
-    const agentName = args.author_label?.trim() || (viewer.app ? nameOf(viewer) : 'agent');
-    const label = viewer.app ? agentName : `${agentName} via ${nameOf(viewer)}`;
-    let description = issue.description ?? '';
 
     // Validate everything before the first write, so a refusal writes nothing.
+    let description = issue.description ?? '';
     if (patch.length > 0) {
       description = applySectionPatches(description, patch);
       await this.checkDescope(issue, description, undefined, 'comment');
     }
-    let questionId: string | null = null;
-    if (args.answers) {
-      const answering = args.answers;
-      const row = listQuestions(description).find((candidate) => candidate.id === answering);
-      if (!row) throw new Error(`No question ${answering} under Open questions`);
-      if (!row.open) throw new Error(`${answering} is already answered: ${row.line}`);
-      questionId = answering;
-    }
-    if (args.kind === 'ask') questionId = nextQuestionId(description);
+    const questionId = questionFor(args, description);
+    const closedBy =
+      args.kind === 'closed_by' && args.closed_by
+        ? await this.closingIssue(issue, args.closed_by)
+        : null;
+    const mention =
+      args.kind === 'ask' && args.ask_to ? await this.mentionFor(args.ask_to, viewer) : null;
 
-    let closedBy: { id: string; identifier: string } | null = null;
-    if (args.kind === 'closed_by' && args.closed_by) {
-      const found = await this.gql<{ issue: { id: string; identifier: string } | null }>(
-        ISSUE_ID_QUERY,
-        {
-          id: args.closed_by,
-        },
-      );
-      if (!found.issue) throw new Error(`closed_by: ${args.closed_by} not found`);
-      if (found.issue.id === issue.id) throw new Error('closed_by names this same ticket');
-      closedBy = found.issue;
-    }
-
-    // Linear turns a profile URL in a comment into a mention, which notifies the person; a name
-    // alone is plain text nobody is told about. A name that doesn't resolve to one member stays text.
-    let mention: { url: string } | { unresolved: string } | null = null;
-    if (args.kind === 'ask' && args.ask_to) {
-      try {
-        const person = await findUser(this.gql, args.ask_to, viewer);
-        mention = person.url
-          ? { url: person.url }
-          : { unresolved: 'Linear returned no profile URL' };
-      } catch (error) {
-        mention = { unresolved: errorMessage(error) };
-      }
-    }
-
+    const label = commentLabel(args, viewer);
+    const date = this.today();
     const subject = questionId ?? closedBy?.identifier;
     const header = `🤖 ${label} · ${date} · ${args.kind}${subject ? ` ${subject}` : ''}`;
-    const patchNote =
-      patch.length > 0
-        ? `\n\nDescription updated: ${patch.map((p) => `${p.section} (${p.mode})`).join(', ')}.`
-        : '';
-
-    // A correction's patch lands before its comment: if the comment then
-    // fails, the description is still right and only the log entry is missing.
-    if (args.kind === 'correction' || args.kind === 'evidence') {
-      const wrote = patch.length > 0 ? await this.writeDescription(issue, description) : null;
-      let comment;
-      try {
-        comment = await this.postComment(issue.id, `${header}\n\n${args.body.trim()}${patchNote}`);
-      } catch (error) {
-        throw new Error(
-          `The description patch landed but the comment did not post (${errorMessage(error)}). Retry the comment as kind "evidence" without a patch.`,
-        );
-      }
-      return {
-        identifier: issue.identifier,
-        kind: args.kind,
-        comment_url: comment.url,
-        ...(wrote
-          ? {
-              updated_sections: patch.map((p) => `${p.section} (${p.mode})`),
-              description_sha: this.remember(wrote.written),
-            }
-          : {}),
-        ...(patch.length > 0 ? uncitedWarning(issue.description ?? '', description) : {}),
-        ...(wrote?.unseenChange
-          ? {
-              warning: 'The description had changed since your claim.',
-              diff_since_claim: wrote.unseenChange,
-            }
-          : {}),
-      };
-    }
-
-    if (closedBy && args.relation) {
-      const relation = args.relation;
-      const comment = await this.postComment(
-        issue.id,
-        `${header}\n\n${args.body.trim()}${patchNote}`,
-      );
-      const steps: string[] = [];
-      try {
-        // Linear reads a duplicate relation as "issueId duplicates relatedIssueId".
-        await this.gql(RELATION_CREATE, {
-          input: {
-            issueId: issue.id,
-            relatedIssueId: closedBy.id,
-            type: relation === 'duplicate' ? 'duplicate' : 'related',
-          },
-        });
-        steps.push('relation');
-        const line = `Closed by ${closedBy.identifier} (${relation === 'duplicate' ? 'duplicate' : 'fixed there'}) on ${date} · [comment](${comment.url})`;
-        await this.writeDescription(
-          issue,
-          applySectionPatches(description, [{ section: 'Fix', mode: 'append', body: line }]),
-        );
-        steps.push('description');
-      } catch (error) {
-        throw new Error(
-          `The comment posted (${comment.url}) but only [${steps.join(', ') || 'nothing'}] of [relation, description] landed: ${errorMessage(error)}`,
-        );
-      }
-      return {
-        identifier: issue.identifier,
-        kind: args.kind,
-        closed_by: closedBy.identifier,
-        relation,
-        comment_url: comment.url,
-      };
-    }
-
-    // ask and answer need the comment's URL for the row, so the comment goes first.
     const askLine = mention && 'url' in mention ? `\n\nAsking ${mention.url}` : '';
-    const comment = await this.postComment(
-      issue.id,
-      `${header}\n\n${args.body.trim()}${askLine}${patchNote}`,
+    const patchNote =
+      patch.length > 0 ? `\n\nDescription updated: ${patchSummary(patch).join(', ')}.` : '';
+    const draft: CommentDraft = {
+      issue,
+      args,
+      patch,
+      description,
+      date,
+      label,
+      text: `${header}\n\n${args.body.trim()}${askLine}${patchNote}`,
+    };
+
+    if (args.kind === 'correction' || args.kind === 'evidence') return this.postLogged(draft);
+    if (closedBy && args.relation) return this.postClosedBy(draft, closedBy, args.relation);
+    return this.postQuestionRow(draft, questionId, mention);
+  }
+
+  private async closingIssue(issue: IssueCore, ref: string) {
+    const found = await this.gql<{ issue: { id: string; identifier: string } | null }>(
+      ISSUE_ID_QUERY,
+      { id: ref },
     );
-    let sha: string | null = null;
+    if (!found.issue) throw new Error(`closed_by: ${ref} not found`);
+    if (found.issue.id === issue.id) throw new Error('closed_by names this same ticket');
+    return found.issue;
+  }
+
+  // Linear turns a profile URL in a comment into a mention, which notifies the person; a name
+  // alone is plain text nobody is told about. A name that doesn't resolve to one member stays text.
+  private async mentionFor(askTo: string, viewer: Viewer): Promise<Mention> {
+    try {
+      const person = await findUser(this.gql, askTo, viewer);
+      return person.url ? { url: person.url } : { unresolved: 'Linear returned no profile URL' };
+    } catch (error) {
+      return { unresolved: errorMessage(error) };
+    }
+  }
+
+  // A correction's patch lands before its comment: if the comment then
+  // fails, the description is still right and only the log entry is missing.
+  private async postLogged({ issue, args, patch, description, text }: CommentDraft) {
+    const wrote = patch.length > 0 ? await this.writeDescription(issue, description) : null;
+    let comment;
+    try {
+      comment = await this.postComment(issue.id, text);
+    } catch (error) {
+      throw new Error(
+        `The description patch landed but the comment did not post (${errorMessage(error)}). Retry the comment as kind "evidence" without a patch.`,
+      );
+    }
+    return {
+      identifier: issue.identifier,
+      kind: args.kind,
+      comment_url: comment.url,
+      ...(wrote
+        ? {
+            updated_sections: patchSummary(patch),
+            description_sha: this.remember(wrote.written),
+          }
+        : {}),
+      ...(patch.length > 0 ? uncitedWarning(issue.description ?? '', description) : {}),
+      ...(wrote?.unseenChange
+        ? {
+            warning: 'The description had changed since your claim.',
+            diff_since_claim: wrote.unseenChange,
+          }
+        : {}),
+    };
+  }
+
+  private async postClosedBy(
+    { issue, args, description, date, text }: CommentDraft,
+    closedBy: { id: string; identifier: string },
+    relation: 'duplicate' | 'fixed_there',
+  ) {
+    const comment = await this.postComment(issue.id, text);
+    const steps: string[] = [];
+    try {
+      // Linear reads a duplicate relation as "issueId duplicates relatedIssueId".
+      await this.gql(RELATION_CREATE, {
+        input: {
+          issueId: issue.id,
+          relatedIssueId: closedBy.id,
+          type: relation === 'duplicate' ? 'duplicate' : 'related',
+        },
+      });
+      steps.push('relation');
+      const line = `Closed by ${closedBy.identifier} (${relation === 'duplicate' ? 'duplicate' : 'fixed there'}) on ${date} · [comment](${comment.url})`;
+      await this.writeDescription(
+        issue,
+        applySectionPatches(description, [{ section: 'Fix', mode: 'append', body: line }]),
+      );
+      steps.push('description');
+    } catch (error) {
+      throw new Error(
+        `The comment posted (${comment.url}) but only [${steps.join(', ') || 'nothing'}] of [relation, description] landed: ${errorMessage(error)}`,
+      );
+    }
+    return {
+      identifier: issue.identifier,
+      kind: args.kind,
+      closed_by: closedBy.identifier,
+      relation,
+      comment_url: comment.url,
+    };
+  }
+
+  // ask and answer need the comment's URL for the row, so the comment goes first.
+  private async postQuestionRow(
+    { issue, args, patch, description, date, label, text }: CommentDraft,
+    questionId: string | null,
+    mention: Mention | null,
+  ) {
+    const comment = await this.postComment(issue.id, text);
     const rowId = questionId ?? nextQuestionId(description);
+    let sha: string;
     try {
       const next =
         args.kind === 'ask'
@@ -1687,24 +1740,14 @@ export class StrictLinear {
         `The comment posted (${comment.url}) but the Open questions row was not written: ${errorMessage(error)}. The description does not reflect this ${args.kind} yet.`,
       );
     }
-
     return {
       identifier: issue.identifier,
       kind: args.kind,
       question: questionId,
       comment_url: comment.url,
-      ...(mention
-        ? 'url' in mention
-          ? { ask_to_mentioned: true }
-          : {
-              ask_to_mentioned: false,
-              ask_to_note: `${args.ask_to ?? ''} was written as text and not notified: ${mention.unresolved}`,
-            }
-        : {}),
-      ...(sha ? { description_sha: sha } : {}),
-      ...(patch.length > 0
-        ? { updated_sections: patch.map((p) => `${p.section} (${p.mode})`) }
-        : {}),
+      ...mentionResult(mention, args.ask_to),
+      description_sha: sha,
+      ...(patch.length > 0 ? { updated_sections: patchSummary(patch) } : {}),
     };
   }
 
