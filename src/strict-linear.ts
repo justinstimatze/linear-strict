@@ -120,6 +120,22 @@ export interface ClaimArgs {
   take_over?: boolean | undefined;
 }
 
+/** set_state's arguments besides the patch, named as the tool names them. */
+export interface SetStateOptions {
+  /** Comment id the description now reflects the thread through. */
+  reconciled_through?: string | undefined;
+  /** How each comment the marker moves past is accounted for. */
+  accounts_for?: Accounting[] | undefined;
+  /** Why an unticked Done when item may be dropped or reworded. */
+  descope_reason?: string | undefined;
+  /** description_sha of the description the patch was written against. */
+  base?: string | undefined;
+  /** What stops being checked if the descope is approved. */
+  descope_risk?: string | undefined;
+  /** The token of a sign-off question asked earlier, on the retry. */
+  sign_off?: string | undefined;
+}
+
 export interface CreateIssueArgs {
   team: string;
   title: string;
@@ -898,16 +914,15 @@ export class StrictLinear {
    * reconciled marker. Every description write on this server, here or in
    * comment(), goes through the same validated section patches.
    */
-  async setState(
-    id: string,
-    patches: SectionPatch[] = [],
-    reconciledThrough?: string,
-    accountsFor: Accounting[] = [],
-    descopeReason?: string,
-    base?: string,
-    descopeRisk?: string,
-    signOffToken?: string,
-  ) {
+  async setState(id: string, patches: SectionPatch[] = [], options: SetStateOptions = {}) {
+    const {
+      reconciled_through: reconciledThrough,
+      accounts_for: accountsFor = [],
+      descope_reason: descopeReason,
+      base,
+      descope_risk: descopeRisk,
+      sign_off: signOffToken,
+    } = options;
     if (!Array.isArray(patches)) throw new Error('patch must be an array');
     if (patches.length === 0 && !reconciledThrough) {
       throw new Error(

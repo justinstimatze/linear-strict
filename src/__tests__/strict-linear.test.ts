@@ -88,9 +88,10 @@ describe('get_issue', () => {
   it('marks comments posted after the reconciled marker as unreconciled', async () => {
     const { state, strict } = setup();
     addComments(state, 2);
-    await strict.setState('ENG-1', [], 'seed-2', [
-      { comment: '*', how: 'no_state_change', reason: 'setup chatter' },
-    ]);
+    await strict.setState('ENG-1', [], {
+      reconciled_through: 'seed-2',
+      accounts_for: [{ comment: '*', how: 'no_state_change', reason: 'setup chatter' }],
+    });
     addComments(state, 1, 'official-mcp-user');
 
     const result = await strict.getIssue('ENG-1');
@@ -125,10 +126,14 @@ describe('the reconciled marker attachment', () => {
   it('keeps the marker in one attachment, out of the description and the attachments list', async () => {
     const { state, strict } = setup();
     addComments(state, 2);
-    await strict.setState('ENG-1', [], 'seed-1', [
-      { comment: '*', how: 'no_state_change', reason: 'setup' },
-    ]);
-    await strict.setState('ENG-1', [OBSERVED], 'seed-2', [{ comment: 'seed-2', how: 'folded' }]);
+    await strict.setState('ENG-1', [], {
+      reconciled_through: 'seed-1',
+      accounts_for: [{ comment: '*', how: 'no_state_change', reason: 'setup' }],
+    });
+    await strict.setState('ENG-1', [OBSERVED], {
+      reconciled_through: 'seed-2',
+      accounts_for: [{ comment: 'seed-2', how: 'folded' }],
+    });
 
     expect(state.issue.description).not.toContain('strict:reconciled');
     expect(marker(state)).toHaveLength(1);
@@ -195,9 +200,10 @@ describe('the reconciled marker attachment', () => {
   it('says when the description changed outside this server since the marker was written', async () => {
     const { state, strict } = setup();
     addComments(state, 1);
-    await strict.setState('ENG-1', [], 'seed-1', [
-      { comment: '*', how: 'no_state_change', reason: 'setup' },
-    ]);
+    await strict.setState('ENG-1', [], {
+      reconciled_through: 'seed-1',
+      accounts_for: [{ comment: '*', how: 'no_state_change', reason: 'setup' }],
+    });
     editOutOfBand(state, `${state.issue.description}\n\nA line someone typed in Linear.`);
 
     const read = await strict.getIssue('ENG-1');
@@ -208,18 +214,20 @@ describe('the reconciled marker attachment', () => {
   it('refuses a marker move whose attachment write fails, and warns on a plain patch', async () => {
     const { state, strict } = setup();
     addComments(state, 1);
-    await strict.setState('ENG-1', [], 'seed-1', [
-      { comment: '*', how: 'no_state_change', reason: 'setup' },
-    ]);
+    await strict.setState('ENG-1', [], {
+      reconciled_through: 'seed-1',
+      accounts_for: [{ comment: '*', how: 'no_state_change', reason: 'setup' }],
+    });
     addComments(state, 1, 'agent-a');
     state.failMarkerUpsert = true;
 
     const patched = await strict.setState('ENG-1', [OBSERVED]);
     expect(patched.marker_warning).toMatch(/could not be updated/);
     await expect(
-      strict.setState('ENG-1', [], 'seed-2', [
-        { comment: '*', how: 'no_state_change', reason: 'x' },
-      ]),
+      strict.setState('ENG-1', [], {
+        reconciled_through: 'seed-2',
+        accounts_for: [{ comment: '*', how: 'no_state_change', reason: 'x' }],
+      }),
     ).rejects.toThrow(/the reconciled marker was not/);
     expect(marker(state)[0]?.metadata).toMatchObject({ through: 'seed-1' });
   });
@@ -235,7 +243,7 @@ describe('reconciled_through accounting', () => {
   it('refuses to move the marker past a comment nobody accounted for, naming it', async () => {
     const { state, strict } = setup();
     addComments(state, 2);
-    await expect(strict.setState('ENG-1', [], 'seed-2')).rejects.toThrow(
+    await expect(strict.setState('ENG-1', [], { reconciled_through: 'seed-2' })).rejects.toThrow(
       /not accounted for: seed-1, seed-2/,
     );
     expect(state.issue.description).not.toContain('strict:reconciled');
@@ -245,11 +253,15 @@ describe('reconciled_through accounting', () => {
     const { state, strict } = setup();
     addComments(state, 1);
     await expect(
-      strict.setState('ENG-1', [], 'seed-1', [{ comment: 'seed-1', how: 'folded' }]),
+      strict.setState('ENG-1', [], {
+        reconciled_through: 'seed-1',
+        accounts_for: [{ comment: 'seed-1', how: 'folded' }],
+      }),
     ).rejects.toThrow(/no patch to fold them into/);
-    const result = await strict.setState('ENG-1', [OBSERVED], 'seed-1', [
-      { comment: 'seed-1', how: 'folded' },
-    ]);
+    const result = await strict.setState('ENG-1', [OBSERVED], {
+      reconciled_through: 'seed-1',
+      accounts_for: [{ comment: 'seed-1', how: 'folded' }],
+    });
     expect(result.accounted).toMatchObject({ folded: 1, self_applied: 0, no_state_change: [] });
   });
 
@@ -265,9 +277,10 @@ describe('reconciled_through accounting', () => {
     const [first] = state.comments;
     if (!first) throw new Error('no comment');
     first.editedAt = '2026-09-24T11:00:00.000Z';
-    await strict.setState('ENG-1', [], 'seed-2', [
-      { comment: '*', how: 'no_state_change', reason: 'setup' },
-    ]);
+    await strict.setState('ENG-1', [], {
+      reconciled_through: 'seed-2',
+      accounts_for: [{ comment: '*', how: 'no_state_change', reason: 'setup' }],
+    });
     expect(state.attachments.find((a) => a.url === MARKER_URL)?.metadata).toMatchObject({
       checked: '2026-09-24T12:00:00.000Z',
     });
@@ -283,12 +296,13 @@ describe('reconciled_through accounting', () => {
     expect(read.drift.next_step).toMatch(/edited after the description accounted for them/);
 
     now = '2026-09-24T14:00:00.000Z';
-    await expect(strict.setState('ENG-1', [], 'seed-2')).rejects.toThrow(
+    await expect(strict.setState('ENG-1', [], { reconciled_through: 'seed-2' })).rejects.toThrow(
       /not accounted for: seed-1/,
     );
-    await strict.setState('ENG-1', [], 'seed-2', [
-      { comment: 'seed-1', how: 'no_state_change', reason: 'typo fix only' },
-    ]);
+    await strict.setState('ENG-1', [], {
+      reconciled_through: 'seed-2',
+      accounts_for: [{ comment: 'seed-1', how: 'no_state_change', reason: 'typo fix only' }],
+    });
     expect((await strict.getIssue('ENG-1')).drift.needs_reconcile).toBe(false);
   });
 
@@ -311,11 +325,15 @@ describe('reconciled_through accounting', () => {
     const { state, strict } = setup();
     addComments(state, 1, 'Ada');
     await expect(
-      strict.setState('ENG-1', [], 'seed-1', [{ comment: 'seed-1', how: 'no_state_change' }]),
+      strict.setState('ENG-1', [], {
+        reconciled_through: 'seed-1',
+        accounts_for: [{ comment: 'seed-1', how: 'no_state_change' }],
+      }),
     ).rejects.toThrow(/needs a reason/);
-    const result = await strict.setState('ENG-1', [], 'seed-1', [
-      { comment: '*', how: 'no_state_change', reason: 'thanks note' },
-    ]);
+    const result = await strict.setState('ENG-1', [], {
+      reconciled_through: 'seed-1',
+      accounts_for: [{ comment: '*', how: 'no_state_change', reason: 'thanks note' }],
+    });
     expect(result.accounted?.no_state_change).toEqual([
       { comment: 'seed-1', author: 'Ada', author_kind: 'person', reason: 'thanks note' },
     ]);
@@ -325,9 +343,10 @@ describe('reconciled_through accounting', () => {
   it('counts typed comments that already changed the description, in drift and in accounting', async () => {
     const { state, strict } = setup();
     addComments(state, 1);
-    await strict.setState('ENG-1', [], 'seed-1', [
-      { comment: 'seed-1', how: 'no_state_change', reason: 'setup' },
-    ]);
+    await strict.setState('ENG-1', [], {
+      reconciled_through: 'seed-1',
+      accounts_for: [{ comment: 'seed-1', how: 'no_state_change', reason: 'setup' }],
+    });
     await strict.comment('ENG-1', {
       kind: 'correction',
       body: 'It was the cache.',
@@ -339,23 +358,29 @@ describe('reconciled_through accounting', () => {
     expect(read.drift.self_applied_after_marker).toBe(1);
 
     const newest = state.comments.at(-1)?.id ?? '';
-    const moved = await strict.setState('ENG-1', [], newest);
+    const moved = await strict.setState('ENG-1', [], { reconciled_through: newest });
     expect(moved.accounted).toMatchObject({ self_applied: 1, folded: 0 });
   });
 
   it('refuses to move the marker back, and refuses entries outside the range', async () => {
     const { state, strict } = setup();
     addComments(state, 2);
-    await strict.setState('ENG-1', [], 'seed-2', [
-      { comment: '*', how: 'no_state_change', reason: 'setup' },
-    ]);
-    await expect(strict.setState('ENG-1', [], 'seed-1')).rejects.toThrow(/cannot move back/);
+    await strict.setState('ENG-1', [], {
+      reconciled_through: 'seed-2',
+      accounts_for: [{ comment: '*', how: 'no_state_change', reason: 'setup' }],
+    });
+    await expect(strict.setState('ENG-1', [], { reconciled_through: 'seed-1' })).rejects.toThrow(
+      /cannot move back/,
+    );
     addComments(state, 1);
     await expect(
-      strict.setState('ENG-1', [], 'seed-3', [
-        { comment: 'seed-1', how: 'no_state_change', reason: 'x' },
-        { comment: 'seed-3', how: 'no_state_change', reason: 'x' },
-      ]),
+      strict.setState('ENG-1', [], {
+        reconciled_through: 'seed-3',
+        accounts_for: [
+          { comment: 'seed-1', how: 'no_state_change', reason: 'x' },
+          { comment: 'seed-3', how: 'no_state_change', reason: 'x' },
+        ],
+      }),
     ).rejects.toThrow(/seed-1 is not between/);
   });
 });
@@ -391,11 +416,10 @@ describe('dropping an unticked Done when item', () => {
     const result = await strict.setState(
       'ENG-1',
       [{ section: 'Done when', mode: 'replace', body: ONE_CHECK }],
-      undefined,
-      [],
-      'Portuguese moved to its own ticket',
-      undefined,
-      'nobody checks Portuguese here',
+      {
+        descope_reason: 'Portuguese moved to its own ticket',
+        descope_risk: 'nobody checks Portuguese here',
+      },
     );
 
     expect(asked).toEqual([
@@ -434,11 +458,7 @@ describe('dropping an unticked Done when item', () => {
             body: `${ONE_CHECK}\n- [ ] a Portuguese question gets some answer`,
           },
         ],
-        undefined,
-        [],
-        'looser',
-        undefined,
-        'any answer passes',
+        { descope_reason: 'looser', descope_risk: 'any answer passes' },
       ),
     ).rejects.toThrow(/Your user declined/);
     await expect(
@@ -463,11 +483,7 @@ describe('dropping an unticked Done when item', () => {
       declining.strict.setState(
         'ENG-1',
         [{ section: 'Done when', mode: 'replace', body: reworded }],
-        undefined,
-        [],
-        'staging is enough',
-        undefined,
-        'the live site goes unchecked',
+        { descope_reason: 'staging is enough', descope_risk: 'the live site goes unchecked' },
       ),
     ).rejects.toThrow(
       /Your user declined[\s\S]*They wrote: keep it on the live site[\s\S]*The client returned action=decline/,
@@ -484,11 +500,7 @@ describe('dropping an unticked Done when item', () => {
     await approving.strict.setState(
       'ENG-1',
       [{ section: 'Done when', mode: 'replace', body: reworded }],
-      undefined,
-      [],
-      'staging is enough',
-      undefined,
-      'the live site goes unchecked',
+      { descope_reason: 'staging is enough', descope_risk: 'the live site goes unchecked' },
     );
     expect(approving.state.comments.at(-1)?.body).toMatch(
       /Reason: staging is enough\n\nWhat stops being checked: the live site goes unchecked\n\nThey wrote: staging is fine for now$/,
@@ -502,15 +514,10 @@ describe('dropping an unticked Done when item', () => {
       return Promise.resolve('approved');
     });
     await expect(
-      strict.setState(
-        'ENG-1',
-        [{ section: 'Done when', mode: 'replace', body: ONE_CHECK }],
-        undefined,
-        [],
-        'x'.repeat(101),
-        undefined,
-        'short',
-      ),
+      strict.setState('ENG-1', [{ section: 'Done when', mode: 'replace', body: ONE_CHECK }], {
+        descope_reason: 'x'.repeat(101),
+        descope_risk: 'short',
+      }),
     ).rejects.toThrow(/descope_reason is 101 characters[\s\S]*about 100/);
     expect(asked).toEqual([]);
   });
@@ -522,13 +529,9 @@ describe('dropping an unticked Done when item', () => {
       return Promise.resolve('approved');
     });
     await expect(
-      strict.setState(
-        'ENG-1',
-        [{ section: 'Done when', mode: 'replace', body: ONE_CHECK }],
-        undefined,
-        [],
-        'moved elsewhere',
-      ),
+      strict.setState('ENG-1', [{ section: 'Done when', mode: 'replace', body: ONE_CHECK }], {
+        descope_reason: 'moved elsewhere',
+      }),
     ).rejects.toThrow(/descope_risk is needed/);
     expect(asked).toEqual([]);
   });
@@ -561,15 +564,10 @@ describe('dropping an unticked Done when item', () => {
     const { state, strict } = withTwoChecks();
     const before = state.issue.description;
     await expect(
-      strict.setState(
-        'ENG-1',
-        [{ section: 'Done when', mode: 'replace', body: ONE_CHECK }],
-        undefined,
-        [],
-        'no longer needed',
-        undefined,
-        'the live site goes unchecked',
-      ),
+      strict.setState('ENG-1', [{ section: 'Done when', mode: 'replace', body: ONE_CHECK }], {
+        descope_reason: 'no longer needed',
+        descope_risk: 'the live site goes unchecked',
+      }),
     ).rejects.toThrow(
       /cannot ask your user[\s\S]*Ask a person to remove or reword the items in Linear/,
     );
@@ -587,16 +585,11 @@ describe('dropping an unticked Done when item', () => {
       );
     });
     const call = (token?: string) =>
-      strict.setState(
-        'ENG-1',
-        [{ section: 'Done when', mode: 'replace', body: ONE_CHECK }],
-        undefined,
-        [],
-        'moved elsewhere',
-        undefined,
-        'nobody checks it',
-        token,
-      );
+      strict.setState('ENG-1', [{ section: 'Done when', mode: 'replace', body: ONE_CHECK }], {
+        descope_reason: 'moved elsewhere',
+        descope_risk: 'nobody checks it',
+        sign_off: token,
+      });
     const before = state.issue.description;
     await expect(call()).rejects.toThrow(/Nothing was written[\s\S]*Ask with AskUserQuestion\./);
     expect(state.issue.description).toBe(before);
@@ -618,11 +611,7 @@ describe('dropping an unticked Done when item', () => {
     const result = await approving.strict.setState(
       'ENG-1',
       [{ section: 'Done when', mode: 'replace', body: ONE_CHECK }],
-      undefined,
-      [],
-      'site retired',
-      undefined,
-      'nothing checks Portuguese',
+      { descope_reason: 'site retired', descope_risk: 'nothing checks Portuguese' },
     );
     expect(result.descope).toMatchObject({ signed_off_by: 'judge (claude-opus-5-5)' });
     expect(approving.state.comments.at(-1)?.body).toMatch(
@@ -641,11 +630,7 @@ describe('dropping an unticked Done when item', () => {
       declining.strict.setState(
         'ENG-1',
         [{ section: 'Done when', mode: 'replace', body: ONE_CHECK }],
-        undefined,
-        [],
-        'site retired',
-        undefined,
-        'nothing checks Portuguese',
+        { descope_reason: 'site retired', descope_risk: 'nothing checks Portuguese' },
       ),
     ).rejects.toThrow(
       /sign-off judge declined[\s\S]*The judge \(claude-opus-5-5\) wrote: Nothing shows the site is gone\./,
@@ -655,13 +640,9 @@ describe('dropping an unticked Done when item', () => {
   it('refuses a stray descope_reason, and refuses a drop through a comment patch', async () => {
     const { strict } = withTwoChecks(() => Promise.resolve('approved'));
     await expect(
-      strict.setState(
-        'ENG-1',
-        [{ section: 'Cause', mode: 'replace', body: 'unknown' }],
-        undefined,
-        [],
-        'why not',
-      ),
+      strict.setState('ENG-1', [{ section: 'Cause', mode: 'replace', body: 'unknown' }], {
+        descope_reason: 'why not',
+      }),
     ).rejects.toThrow(/drops no unticked Done when item/);
     await expect(
       strict.comment('ENG-1', {
@@ -900,7 +881,7 @@ describe('claim and the Done gate', () => {
     await expect(archived.strict.claim('ENG-1')).rejects.toThrow(/is archived/);
     const trashed = setup();
     trashed.state.issue.trashed = true;
-    await expect(trashed.strict.setState('ENG-1', [], undefined)).rejects.toThrow();
+    await expect(trashed.strict.setState('ENG-1', [])).rejects.toThrow();
     await expect(trashed.strict.comment('ENG-1', { kind: 'evidence', body: 'x' })).rejects.toThrow(
       /in the trash/,
     );
@@ -1104,17 +1085,12 @@ describe('base: the description a patch was written against', () => {
     const read = await strict.getIssue('ENG-1');
     expect(read.issue.description_sha).toBe(descriptionSha(state.issue.description));
 
-    const first = await strict.setState(
-      'ENG-1',
-      observed('first'),
-      undefined,
-      [],
-      undefined,
-      read.issue.description_sha,
-    );
+    const first = await strict.setState('ENG-1', observed('first'), {
+      base: read.issue.description_sha,
+    });
     expect(first.description_sha).toBe(descriptionSha(state.issue.description));
     await expect(
-      strict.setState('ENG-1', observed('second'), undefined, [], undefined, first.description_sha),
+      strict.setState('ENG-1', observed('second'), { base: first.description_sha }),
     ).resolves.toMatchObject({
       updated_sections: ['Observed (append)'],
     });
@@ -1127,14 +1103,7 @@ describe('base: the description a patch was written against', () => {
     const before = state.issue.description;
 
     await expect(
-      strict.setState(
-        'ENG-1',
-        observed('late'),
-        undefined,
-        [],
-        undefined,
-        read.issue.description_sha,
-      ),
+      strict.setState('ENG-1', observed('late'), { base: read.issue.description_sha }),
     ).rejects.toThrow(
       /no longer the one your base[\s\S]*\+ - \[ \] a check someone added[\s\S]*get_issue/,
     );
@@ -1143,9 +1112,9 @@ describe('base: the description a patch was written against', () => {
 
   it('refuses a base this server never returned, without a diff', async () => {
     const { strict } = setup();
-    await expect(
-      strict.setState('ENG-1', observed('x'), undefined, [], undefined, '000000000000'),
-    ).rejects.toThrow(/your base \(000000000000\) came from\.\nRead the ticket again/);
+    await expect(strict.setState('ENG-1', observed('x'), { base: '000000000000' })).rejects.toThrow(
+      /your base \(000000000000\) came from\.\nRead the ticket again/,
+    );
   });
 
   it('refuses a correction built from an older read before posting anything', async () => {

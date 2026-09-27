@@ -72,10 +72,10 @@ try {
   assert.equal(read.drift.needs_reconcile, true);
 
   step('set_state with reconciled_through keeps the marker');
-  await assert.rejects(strict.setState(id, [], seeded.at(-1)), /not accounted for/, 'unaccounted comments block the marker');
-  const reconciled = await strict.setState(id, [], seeded.at(-1), [
+  await assert.rejects(strict.setState(id, [], { reconciled_through: seeded.at(-1) }), /not accounted for/, 'unaccounted comments block the marker');
+  const reconciled = await strict.setState(id, [], { reconciled_through: seeded.at(-1), accounts_for: [
     { comment: '*', how: 'no_state_change', reason: 'seeded test comments' },
-  ]);
+  ] });
   console.log(JSON.stringify(reconciled.reconciled_through));
   read = await strict.getIssue(id);
   assert.equal(read.drift.reconciled_through?.through, seeded.at(-1));
@@ -104,7 +104,7 @@ try {
 
   step('a patch built from the read before that edit is refused');
   const stale = [{ section: 'Observed', mode: 'append', body: '- 2026-09-24 · scripts/live-test.mjs · stale patch' }];
-  await assert.rejects(strict.setState(id, stale, undefined, [], undefined, beforeEdit.description_sha), /no longer the one your base[\s\S]*a late criterion/);
+  await assert.rejects(strict.setState(id, stale, { base: beforeEdit.description_sha }), /no longer the one your base[\s\S]*a late criterion/);
 
   step('typed comments');
   await assert.rejects(strict.comment(id, { kind: 'correction', body: 'no patch' }), /must carry a description patch/);
@@ -134,7 +134,7 @@ try {
     return /2 Done when items are not ticked/.test(error.message);
   });
   await assert.rejects(
-    strict.setState(id, [{ section: 'Done when', mode: 'replace', body: '- [ ] the live test deletes this issue' }], undefined, [], 'live test', undefined, 'the live test stops checking its own cleanup'),
+    strict.setState(id, [{ section: 'Done when', mode: 'replace', body: '- [ ] the live test deletes this issue' }], { descope_reason: 'live test', descope_risk: 'the live test stops checking its own cleanup' }),
     /cannot ask your user/,
     'dropping an unticked item without a client that can ask is refused',
   );

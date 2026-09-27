@@ -752,16 +752,14 @@ export function strictToolHandlers(
     }),
     check_claim: withArgs((args) => strict.checkClaim(req(args, 'issue'))),
     set_state: withArgs((args) =>
-      strict.setState(
-        req(args, 'issue'),
-        patches(args, 'patch') ?? [],
-        opt(args, 'reconciled_through'),
-        accountsFor(args),
-        opt(args, 'descope_reason'),
-        baseArg(args),
-        opt(args, 'descope_risk'),
-        opt(args, 'sign_off'),
-      ),
+      strict.setState(req(args, 'issue'), patches(args, 'patch') ?? [], {
+        reconciled_through: opt(args, 'reconciled_through'),
+        accounts_for: accountsFor(args),
+        descope_reason: opt(args, 'descope_reason'),
+        base: baseArg(args),
+        descope_risk: opt(args, 'descope_risk'),
+        sign_off: opt(args, 'sign_off'),
+      }),
     ),
     comment: withArgs((args) => {
       const patch = patches(args, 'patch');
