@@ -177,7 +177,7 @@ The server also returns these rules as MCP `instructions` on `initialize`, so an
 ## Development
 
 ```bash
-npm test         # typecheck, lint, unit tests, MCP smoke test, and the sign-off routes end to end
+npm test         # typecheck, lint, format and unused-code checks, unit tests, MCP smoke test, and the sign-off routes end to end
 npm run build
 node scripts/e2e/sign-off.mjs --live-judge  # the same, with the judge on the real API (one call, well under a cent)
 npm run test:live  # against a real workspace: creates temporary tickets on LIVE_TEAM and deletes them

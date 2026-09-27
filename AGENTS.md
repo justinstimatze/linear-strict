@@ -5,4 +5,4 @@
 - Description format rules live in `src/sections.ts`. A refusal says what to do instead, not only what was wrong.
 - `docs/design.md` holds why each rule exists, its limits and what is open. Change it in the same commit as a decision it describes.
 - Tests use invented names only (`agent-a`, `Ada`, `Grace`), never a real person or workspace.
-- `npm test` runs typecheck, lint, unit tests and the smoke test. `npm run test:live` writes to a real workspace and deletes what it creates; run it only when asked.
+- `npm test` runs typecheck, lint, Prettier, knip, unit tests, the smoke test and the sign-off end-to-end test. `npm run format` fixes formatting. `npm run test:live` writes to a real workspace and deletes what it creates; run it only when asked.
