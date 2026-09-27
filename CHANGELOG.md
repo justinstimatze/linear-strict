@@ -1,11 +1,16 @@
 # Changelog
 
-## Unreleased
+## 0.1.1 — 2026-09-27
 
-- Requires Node 22 or later. Node 20 reached end of life on 2026-04-30; CI now tests 22 and 24.
-- `npm test` checks Prettier formatting and runs knip for unused files, exports and dependencies; CI runs shellcheck on the hook scripts.
-- Development moves to TypeScript 6.0, ESLint 10 and Jest 30. Errors rethrown with a new message keep the original as `cause`.
-- `examples/claude-code-hooks/install.sh` installs into a project outside git instead of refusing, says what to add to `.gitignore` when the file isn't ignored, and no longer creates an empty settings file when it refuses or runs `--status`. Its README gives the hooks' path under a global install of the release `.tgz` (it is not on npm).
+- The Claude Code hooks installer (`examples/claude-code-hooks/install.sh`) works in a project outside git instead of refusing it. In a git repo where `.claude/settings.local.json` isn't ignored, it says which line to add to `.gitignore`, and a refusal or `--status` no longer leaves an empty settings file behind. Its README gives the path under a global install of the release `.tgz`, since the package is not on npm.
+- Requires Node 22 or later. Node 20 reached end of life on 2026-04-30; CI tests 22 and 24.
+- No change to the tools or what they return.
+
+Development:
+
+- `npm test` also checks Prettier formatting and runs knip for unused files, exports and dependencies; CI runs shellcheck on the hook scripts.
+- TypeScript 6.0, ESLint 10 and Jest 30. Errors rethrown with a new message keep the original as `cause`.
+- `src/strict-linear.ts` is split into modules (queries, Done when checks, descope, reconciling, comment rules, get_issue and list_issues shaping), and `StrictLinear.setState` takes its optional arguments as one object.
 - An optional pre-commit hook (`git config core.hooksPath hooks`) runs a non-blocking CodeScene delta check.
 
 ## 0.1.0 — 2026-09-27

@@ -45,7 +45,7 @@ Linear keeps full history, yet agents working from it drift:
 2. Add the server and the sign-off hooks:
 
    ```bash
-   npm install -g https://github.com/justinstimatze/linear-strict/releases/download/v0.1.0/linear-strict-0.1.0.tgz
+   npm install -g https://github.com/justinstimatze/linear-strict/releases/download/v0.1.1/linear-strict-0.1.1.tgz
    claude mcp add linear-strict -e LINEAR_API_TOKEN=<token> -- linear-strict
    linear-strict install
    ```
