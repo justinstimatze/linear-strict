@@ -76,6 +76,7 @@ import {
   checkCommentArgs,
   type CommentArgs,
   type CommentDraft,
+  commentBody,
   commentLabel,
   type Mention,
   mentionResult,
@@ -1144,6 +1145,12 @@ export class StrictLinear {
   async comment(id: string, args: CommentArgs) {
     const patch = args.patch ?? [];
     checkCommentArgs(args, patch);
+    const body = commentBody(args.body, patch.length > 0);
+    if (body === '') {
+      throw new Error(
+        'body holds only a comment header. The server writes the header from kind; send the content alone.',
+      );
+    }
 
     const issue = await this.writable(id);
     this.checkBase(issue, args.base);
@@ -1172,12 +1179,12 @@ export class StrictLinear {
       patch.length > 0 ? `\n\nDescription updated: ${patchSummary(patch).join(', ')}.` : '';
     const draft: CommentDraft = {
       issue,
-      args,
+      args: { ...args, body },
       patch,
       description,
       date,
       label,
-      text: `${header}\n\n${args.body.trim()}${askLine}${patchNote}`,
+      text: `${header}\n\n${body}${askLine}${patchNote}`,
     };
 
     if (args.kind === 'correction' || args.kind === 'evidence') return this.postLogged(draft);

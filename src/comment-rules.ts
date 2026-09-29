@@ -2,7 +2,7 @@
  * The comment tool's rules that need no I/O: which arguments each kind takes,
  * which Open questions row it writes, and how its header and result read.
  */
-import { type SectionPatch, listQuestions, nextQuestionId } from './sections.js';
+import { type SectionPatch, commentKind, listQuestions, nextQuestionId } from './sections.js';
 import { type IssueCore, nameOf, type Viewer } from './issue-core.js';
 
 export const COMMENT_KINDS = ['evidence', 'correction', 'ask', 'answer', 'closed_by'] as const;
@@ -77,8 +77,44 @@ export function questionFor(args: CommentArgs, description: string): string | nu
 // token means an agent posting as a person; say so, so the thread never
 // reads as the person having typed it.
 export function commentLabel(args: CommentArgs, viewer: Viewer) {
-  const agentName = args.author_label?.trim() || (viewer.app ? nameOf(viewer) : 'agent');
+  const agentName =
+    cleanAuthorLabel(args.author_label ?? '') || (viewer.app ? nameOf(viewer) : 'agent');
   return viewer.app ? agentName : `${agentName} via ${nameOf(viewer)}`;
+}
+
+const DATE_PART = /^\d{4}-\d{2}-\d{2}$/;
+const KIND_PART = /^(evidence|correction|ask|answer|closed_by|descope)\b/;
+
+// An agent told to write the header sometimes passes a whole one as its label.
+// Keep the name: drop the robot, the date and the kind, which the header adds itself.
+function cleanAuthorLabel(label: string) {
+  const [name = '', ...rest] = label.split(' · ').map((part) => part.trim());
+  const kept = rest.filter((part) => !DATE_PART.test(part) && !KIND_PART.test(part));
+  return [name.replace(/^(🤖\s*)+/u, ''), ...kept].filter((part) => part !== '').join(' · ');
+}
+
+const PATCH_NOTE_LINE = /^Description updated: .*$/;
+
+/**
+ * The body as posted under the server's header. Agents are often told to open a
+ * comment with that header, so the body can arrive with its own copy, sometimes
+ * of another kind; the header built from `kind` is the one whose rules were
+ * checked, so a copy in the body is dropped. With a patch, a hand-typed
+ * "Description updated" line is dropped too, since the server writes its own.
+ */
+export function commentBody(body: string, patched: boolean) {
+  const lines = body.trim().split('\n');
+  while (lines.length > 0 && commentKind(lines[0] ?? '') !== null) {
+    lines.shift();
+    while (lines.length > 0 && lines[0]?.trim() === '') lines.shift();
+  }
+  if (patched) {
+    while (lines.length > 0 && PATCH_NOTE_LINE.test(lines.at(-1)?.trim() ?? '')) {
+      lines.pop();
+      while (lines.length > 0 && lines.at(-1)?.trim() === '') lines.pop();
+    }
+  }
+  return lines.join('\n').trim();
 }
 
 export function patchSummary(patch: SectionPatch[]) {

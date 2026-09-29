@@ -162,7 +162,7 @@ A write that ticks a `Done when` item without a citation still lands, and the re
 
 ### `comment`
 
-A typed comment, headed `🤖 <author> · <date> · <kind>`.
+A typed comment, headed `🤖 <author> · <date> · <kind>`. The server writes the header from `kind`, so `body` holds only the content. A header typed at the top of `body` is dropped, even one naming another kind, as is a `Description updated` line typed at the end when the call carries a patch. An `author_label` that is a whole header keeps only the name.
 
 | Kind | Required with it | Effect on the description |
 |---|---|---|

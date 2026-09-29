@@ -971,6 +971,57 @@ describe('typed comments', () => {
     expect(state.comments[0]?.body).toMatch(/^🤖 claude-opus via Grace · 2026-09-24 · evidence\n/);
   });
 
+  it('drops a header the agent typed into the body, keeping the one built from kind', async () => {
+    const { state, strict } = setup();
+    await strict.comment('ENG-1', {
+      kind: 'evidence',
+      body: '🤖 agent-a · 2026-09-24 · evidence\n\nsaw it',
+      author_label: 'agent-a',
+    });
+    expect(state.comments[0]?.body).toBe('🤖 agent-a · 2026-09-24 · evidence\n\nsaw it');
+  });
+
+  it('drops a typed header whose kind disagrees with the kind argument', async () => {
+    const { state, strict } = setup();
+    await strict.comment('ENG-1', {
+      kind: 'correction',
+      body: '🤖 agent-a · 2026-09-24 · evidence\n\nlimits exist',
+      patch: [{ section: 'Observed', mode: 'append', body: '- 2026-09-24 · `rg MAX_` · limits' }],
+      author_label: 'agent-a',
+    });
+    const body = state.comments[0]?.body ?? '';
+    expect(body).toMatch(/^🤖 agent-a · 2026-09-24 · correction\n\nlimits exist\n/);
+    expect(body).not.toContain('· evidence');
+  });
+
+  it('keeps only the name when author_label is a whole header', async () => {
+    const { state, strict } = setup();
+    await strict.comment('ENG-1', {
+      kind: 'evidence',
+      body: 'saw it',
+      author_label: '🤖 agent-a (host-b) · 2026-09-24 · evidence',
+    });
+    expect(state.comments[0]?.body).toMatch(/^🤖 agent-a \(host-b\) · 2026-09-24 · evidence\n/);
+  });
+
+  it('writes one "Description updated" line when the agent typed its own', async () => {
+    const { state, strict } = setup();
+    await strict.comment('ENG-1', {
+      kind: 'correction',
+      body: 'limits exist\n\nDescription updated: Observed (append).',
+      patch: [{ section: 'Observed', mode: 'append', body: '- 2026-09-24 · `rg MAX_` · limits' }],
+    });
+    expect(state.comments[0]?.body.match(/Description updated/g)).toHaveLength(1);
+  });
+
+  it('refuses a body that is only a header and writes nothing', async () => {
+    const { state, strict } = setup();
+    await expect(
+      strict.comment('ENG-1', { kind: 'evidence', body: '🤖 agent-a · 2026-09-24 · evidence' }),
+    ).rejects.toThrow(/send the content alone/);
+    expect(state.comments).toHaveLength(0);
+  });
+
   it('closed_by sets the relation, records it under Fix, and needs both arguments', async () => {
     const { state, strict } = setup();
     await expect(

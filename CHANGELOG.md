@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- `comment` writes one header. The server builds the header from `kind`, so a header typed at the top of `body` is now dropped, including one that names a different kind. The same goes for a `Description updated` line typed at the end of a call that carries a patch. An `author_label` that is a whole header keeps only the name, and a body that is nothing but a header is refused. An `ask` no longer turns a typed header into its question row.
+
 ## 0.1.1 — 2026-09-27
 
 - The Claude Code hooks installer (`examples/claude-code-hooks/install.sh`) works in a project outside git instead of refusing it. In a git repo where `.claude/settings.local.json` isn't ignored, it says which line to add to `.gitignore`, and a refusal or `--status` no longer leaves an empty settings file behind. Its README gives the path under a global install of the release `.tgz`, since the package is not on npm.

@@ -408,7 +408,8 @@ export const strictToolDefinitions: MCPToolDefinition[] = [
         kind: { type: 'string', enum: [...COMMENT_KINDS] },
         body: {
           type: 'string',
-          description: 'Comment text. For ask, the first line becomes the question row.',
+          description:
+            'Comment text, without a header: the server writes the header from kind and drops a copy typed here. For ask, the first line becomes the question row.',
         },
         patch: PATCH_SCHEMA,
         base: { ...BASE_ARG, description: `Required with patch. ${BASE_ARG.description}` },
