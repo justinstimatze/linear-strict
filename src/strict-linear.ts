@@ -167,6 +167,12 @@ export interface StrictLinearOptions {
    * items. Without it, only a person editing in Linear can drop one.
    */
   signOff?: (request: SignOffRequest) => Promise<SignOffOutcome | SignOffAnswer>;
+  /**
+   * A second, read-only credential: the human this identity acts for,
+   * wired by pennon's onboard from LINEAR_PRINCIPAL_TOKEN/LINEAR_PRINCIPAL_ID.
+   * Absent for most identities — only get_principal_notifications reads it.
+   */
+  principal?: { gql: Gql; userId: string } | undefined;
 }
 
 export interface SignOffRequest {
@@ -232,6 +238,9 @@ export class StrictLinear {
   private readonly seen = new Map<string, string>();
   /** Teams, cycles, projects, initiatives and the notification inbox. */
   readonly workspace: StrictWorkspace;
+  private readonly principal: { gql: Gql; userId: string } | undefined;
+  private readonly principalWorkspace: StrictWorkspace | undefined;
+  private principalViewerCache: Viewer | null = null;
 
   constructor(options: StrictLinearOptions) {
     this.gql = options.gql;
@@ -242,6 +251,10 @@ export class StrictLinear {
     this.handsOff = (options.handsOffLabels ?? ['no-agents']).map((label) => label.toLowerCase());
     this.signOff = options.signOff;
     this.workspace = new StrictWorkspace(this.gql, this.now);
+    this.principal = options.principal;
+    this.principalWorkspace = options.principal
+      ? new StrictWorkspace(options.principal.gql, this.now)
+      : undefined;
   }
 
   private today() {
@@ -254,6 +267,34 @@ export class StrictLinear {
       this.viewerCache = data.viewer;
     }
     return this.viewerCache;
+  }
+
+  /**
+   * The principal's own inbox, on their own token — a different person's
+   * notifications from this identity's own `notifications`. Before
+   * returning anything, checks that the token resolves to the id pennon
+   * wired alongside it. A stale or mismatched LINEAR_PRINCIPAL_TOKEN fails
+   * loudly here rather than silently serving whoever it happens to belong
+   * to.
+   */
+  async principalNotifications(
+    args: Parameters<StrictWorkspace['notifications']>[0],
+  ): Promise<ReturnType<StrictWorkspace['notifications']>> {
+    if (!this.principal || !this.principalWorkspace) {
+      throw new Error(
+        'LINEAR_PRINCIPAL_TOKEN is not configured for this identity — nothing to read. Set it (and LINEAR_PRINCIPAL_ID) via pennon onboard, or in principals.json for the human this identity acts for.',
+      );
+    }
+    if (!this.principalViewerCache) {
+      const data = await this.principal.gql<{ viewer: Viewer }>(VIEWER_QUERY);
+      if (data.viewer.id !== this.principal.userId) {
+        throw new Error(
+          `LINEAR_PRINCIPAL_TOKEN resolves to user ${data.viewer.id}, not LINEAR_PRINCIPAL_ID (${this.principal.userId}) — refusing to serve notifications under a mismatched identity. Check principals.json and re-run pennon onboard.`,
+        );
+      }
+      this.principalViewerCache = data.viewer;
+    }
+    return this.principalWorkspace.notifications(args);
   }
 
   private async core(id: string): Promise<IssueCore> {

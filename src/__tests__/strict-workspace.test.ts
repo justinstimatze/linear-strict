@@ -173,6 +173,70 @@ describe('notifications', () => {
   });
 });
 
+describe('principalNotifications', () => {
+  it('refuses when no principal credential is configured', async () => {
+    const { gql } = fakeGql(() => ({ issues: page([], null) }));
+    const strict = new StrictLinear({ gql, claims: memoryClaimStore() });
+    await expect(strict.principalNotifications({})).rejects.toThrow(
+      /LINEAR_PRINCIPAL_TOKEN is not configured/,
+    );
+  });
+
+  it("reads through the principal credential, not the identity's own, once the viewer id matches", async () => {
+    const { gql: ownGql } = fakeGql(() => ({ issues: page([], null) }));
+    const { gql: principalGql, calls: principalCalls } = fakeGql((op) =>
+      op === 'StrictViewer'
+        ? { viewer: { id: 'u-principal', name: 'Justin', displayName: 'Justin', app: false } }
+        : { notificationsUnreadCount: 1, notifications: page([note(1, false)], null) },
+    );
+    const strict = new StrictLinear({
+      gql: ownGql,
+      claims: memoryClaimStore(),
+      principal: { gql: principalGql, userId: 'u-principal' },
+    });
+
+    const result = await strict.principalNotifications({ first: 5 });
+
+    expect(result.notifications.map((n) => n.id)).toEqual(['n-1']);
+    expect(principalCalls.map((c) => c.op)).toEqual(['StrictViewer', 'StrictNotifications']);
+  });
+
+  it('refuses when the principal token resolves to a different user than LINEAR_PRINCIPAL_ID', async () => {
+    const { gql: ownGql } = fakeGql(() => ({ issues: page([], null) }));
+    const { gql: principalGql } = fakeGql(() => ({
+      viewer: { id: 'u-someone-else', name: 'Not Justin', displayName: 'Not Justin', app: false },
+    }));
+    const strict = new StrictLinear({
+      gql: ownGql,
+      claims: memoryClaimStore(),
+      principal: { gql: principalGql, userId: 'u-principal' },
+    });
+
+    await expect(strict.principalNotifications({})).rejects.toThrow(
+      /resolves to user u-someone-else, not LINEAR_PRINCIPAL_ID \(u-principal\)/,
+    );
+  });
+
+  it("caches the viewer check across calls, same as the identity's own viewer()", async () => {
+    const { gql: ownGql } = fakeGql(() => ({ issues: page([], null) }));
+    const { gql: principalGql, calls: principalCalls } = fakeGql((op) =>
+      op === 'StrictViewer'
+        ? { viewer: { id: 'u-principal', name: 'Justin', displayName: 'Justin', app: false } }
+        : { notificationsUnreadCount: 0, notifications: page([], null) },
+    );
+    const strict = new StrictLinear({
+      gql: ownGql,
+      claims: memoryClaimStore(),
+      principal: { gql: principalGql, userId: 'u-principal' },
+    });
+
+    await strict.principalNotifications({});
+    await strict.principalNotifications({});
+
+    expect(principalCalls.filter((c) => c.op === 'StrictViewer')).toHaveLength(1);
+  });
+});
+
 describe('list_issues cycle and project filters', () => {
   it('filters by cycle within a team and by project name or id', async () => {
     const { gql, calls } = fakeGql(() => ({ issues: page([], null) }));

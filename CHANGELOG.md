@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `get_principal_notifications`: a second, explicitly separate notifications tool reading the inbox of the human an identity acts for, rather than the identity's own. Needs `LINEAR_PRINCIPAL_TOKEN`/`LINEAR_PRINCIPAL_ID` in the server's environment (pennon's `onboard` wires both when a `principals.json` entry exists); refuses if either is missing, and refuses if the token resolves to a different user than `LINEAR_PRINCIPAL_ID` names, rather than silently serving whoever it belongs to. Read-only — no `mark_principal_notifications_read` counterpart.
 - `set_status` refuses a completed state when the ticket's linked PRs merged, and every one of them merged into a branch other than the main one. Before, this only showed up afterwards as a `not_on_main` finding on the next read. The refusal says to use a state that isn't completed, or to confirm with git that the work is on main and link the PR that took it there.
 - `set_fields` takes `link_prs`, GitHub pull request URLs to link to the ticket, such as a promotion PR.
 - `comment` writes one header. The server builds the header from `kind`, so a header typed at the top of `body` is now dropped, including one that names a different kind. The same goes for a `Description updated` line typed at the end of a call that carries a patch. An `author_label` that is a whole header keeps only the name, and a body that is nothing but a header is refused. An `ask` no longer turns a typed header into its question row.

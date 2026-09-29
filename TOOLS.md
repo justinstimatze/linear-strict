@@ -95,6 +95,17 @@ Your inbox, newest first, as pointers: notification id, type, time, whether it i
 
 When `has_more` is true, pass `next_cursor` as `after`. If a later page fails, the call returns what it has with `stopped_early` and a cursor that resumes at the failed page.
 
+### `get_principal_notifications`
+
+The inbox of the human this identity acts for, not the identity's own — same arguments and shape as `notifications`, a deliberately separate tool rather than a parameter, so which inbox a call reads is never ambiguous. Needs `LINEAR_PRINCIPAL_TOKEN` and `LINEAR_PRINCIPAL_ID` set in the server's environment; refuses if either is missing, and refuses if the token resolves to a different Linear user than `LINEAR_PRINCIPAL_ID` names. Read-only: there is no `mark_principal_notifications_read`.
+
+| Argument | Required | |
+|---|---|---|
+| `unread_only` | | Default true |
+| `since` | | Only notifications created on or after this date |
+| `first` | | How many to return, 1–100, default 50 |
+| `after` | | `next_cursor` from the previous call |
+
 ### `mark_notifications_read`
 
 | Argument | Required | |

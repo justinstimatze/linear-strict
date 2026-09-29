@@ -169,6 +169,7 @@ Each ticket this server has reconciled carries one attachment titled "linear-str
 | `list_cycles` | Cycles, active and next by default; pair a number with `list_issues` |
 | `list_projects`, `list_initiatives` | Open projects and initiatives with status, owner and dates |
 | `notifications` | Your inbox as pointers (ticket, type, actor, time), no excerpt text, paginated |
+| `get_principal_notifications` | The same, for the human this identity acts for, on their own credential — needs `LINEAR_PRINCIPAL_TOKEN`/`LINEAR_PRINCIPAL_ID` configured |
 | `mark_notifications_read` | Mark handled notifications read |
 | `whoami` | The user or app behind the token, which is who claims and `_is_me` filters mean |
 

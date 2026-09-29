@@ -20,6 +20,7 @@ const strictToolNames = [
   'list_projects',
   'list_initiatives',
   'notifications',
+  'get_principal_notifications',
   'mark_notifications_read',
   'set_fields',
   'whoami',

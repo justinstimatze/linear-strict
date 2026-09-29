@@ -291,6 +291,30 @@ export const strictToolDefinitions: MCPToolDefinition[] = [
     annotations: READ,
   },
   {
+    name: 'get_principal_notifications',
+    description:
+      "The inbox of the human this identity acts for — a different person's notifications from notifications, which is this identity's own. Same shape, deliberately a separate tool rather than a parameter, so which inbox you're reading is never ambiguous. Errors if LINEAR_PRINCIPAL_TOKEN isn't configured for this identity, or if it resolves to someone other than LINEAR_PRINCIPAL_ID.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        unread_only: { type: 'boolean', description: 'Default true' },
+        since: {
+          type: 'string',
+          description: 'Only notifications created on or after this date, e.g. 2026-09-24',
+        },
+        first: {
+          type: 'integer',
+          minimum: 1,
+          maximum: 100,
+          description: 'How many to return, default 50',
+        },
+        after: { type: 'string', description: 'next_cursor from the previous call' },
+      },
+    },
+    output_schema: NOTIFICATIONS_OUTPUT,
+    annotations: READ,
+  },
+  {
     name: 'mark_notifications_read',
     description: 'Mark notifications read once you have handled them. Reports each id separately.',
     input_schema: {
@@ -736,6 +760,14 @@ export function strictToolHandlers(
     ),
     notifications: withArgs((args) =>
       strict.workspace.notifications({
+        unread_only: bool(args, 'unread_only'),
+        since: opt(args, 'since'),
+        first: int(args, 'first'),
+        after: opt(args, 'after'),
+      }),
+    ),
+    get_principal_notifications: withArgs((args) =>
+      strict.principalNotifications({
         unread_only: bool(args, 'unread_only'),
         since: opt(args, 'since'),
         first: int(args, 'first'),

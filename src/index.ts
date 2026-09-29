@@ -6,7 +6,7 @@ import { runAuthCli } from './auth/cli.js';
 import { createRefreshingProvider } from './auth/refreshing-provider.js';
 import { resolveLinearAuth } from './auth/resolve.js';
 import { fileClaimStore } from './claims.js';
-import { logError } from './config.js';
+import { getPrincipalConfig, logError } from './config.js';
 import { STRICT_INSTRUCTIONS } from './instructions.js';
 import { linearGql } from './linear.js';
 import { runServer } from './server.js';
@@ -33,6 +33,12 @@ async function main(): Promise<void> {
   const connection: { server?: Elicitor } = {};
   const claims = fileClaimStore();
   const signOff = chooseSignOff(() => connection.server);
+  // Static, unlike the server's own auth: LINEAR_PRINCIPAL_TOKEN isn't
+  // refreshed or store-backed, so its Gql is built once and reused across
+  // every rebuild below, instead of losing its rate-limit backoff state
+  // each time the primary token refreshes.
+  const principalConfig = getPrincipalConfig();
+  const principalGql = principalConfig ? linearGql({ token: principalConfig.token }) : undefined;
   // One StrictLinear per access token, so its viewer lookup is cached until a
   // refresh rotates the token.
   const handlers = createRefreshingProvider({
@@ -49,6 +55,10 @@ async function main(): Promise<void> {
             .map((label) => label.trim())
             .filter(Boolean),
           signOff,
+          principal:
+            principalConfig && principalGql
+              ? { gql: principalGql, userId: principalConfig.userId }
+              : undefined,
         }),
       ),
   });

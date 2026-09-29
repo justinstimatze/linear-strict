@@ -78,6 +78,25 @@ export function getExplicitLinearAuthConfig(): LinearAuthConfig | undefined {
   return undefined;
 }
 
+export interface PrincipalConfig {
+  token: string;
+  userId: string;
+}
+
+/**
+ * The human this identity acts for, if pennon's onboard has wired one
+ * (LINEAR_PRINCIPAL_TOKEN + LINEAR_PRINCIPAL_ID). Absent for most
+ * identities — only get_principal_notifications needs it. Both must be
+ * set; one without the other is treated as absent rather than guessed at,
+ * since it's a half-finished wiring rather than a usable principal.
+ */
+export function getPrincipalConfig(): PrincipalConfig | undefined {
+  const token = process.env['LINEAR_PRINCIPAL_TOKEN'];
+  const userId = process.env['LINEAR_PRINCIPAL_ID'];
+  if (!token || !userId) return undefined;
+  return { token, userId };
+}
+
 export function isDebugLoggingEnabled(): boolean {
   return (
     process.env['LINEAR_STRICT_DEBUG'] === '1' || process.env['LINEAR_STRICT_DEBUG'] === 'true'
