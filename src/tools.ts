@@ -439,7 +439,7 @@ export const strictToolDefinitions: MCPToolDefinition[] = [
   {
     name: 'set_status',
     description:
-      'Move a ticket to a workflow state by name. Moving to a completed state (Done) needs a Done when section with every item ticked and cited, any cited PR linked here merged, and your claim, and refuses, returning the diff, if the description changed since you claimed it. This call carries no evidence of its own: write it into the description with set_state first, where this check and any close gate a project hooks onto this tool read it. Moving to a canceled state skips those checks, so it needs reason, which is posted as a comment.',
+      'Move a ticket to a workflow state by name. Moving to a completed state (Done) needs a Done when section with every item ticked and cited, any cited PR linked here merged, a linked PR merged into the main branch when any merged at all (link a promotion PR with set_fields link_prs), and your claim, and refuses, returning the diff, if the description changed since you claimed it. This call carries no evidence of its own: write it into the description with set_state first, where this check and any close gate a project hooks onto this tool read it. Moving to a canceled state skips those checks, so it needs reason, which is posted as a comment.',
     input_schema: {
       type: 'object',
       properties: {
@@ -459,7 +459,7 @@ export const strictToolDefinitions: MCPToolDefinition[] = [
   {
     name: 'set_fields',
     description:
-      "Change a ticket's fields other than its content: title, priority, assignee or delegate, labels, cycle, project, milestone, parent, due date, estimate, and relations to other tickets. The description changes only through set_state and the workflow state only through set_status. Names are resolved to ids first and the whole call is refused if any is unknown or ambiguous, so nothing is half-applied. Taking a ticket from its current assignee needs take_over; another agent's ticket, or one delegated to someone else, is refused.",
+      "Change a ticket's fields other than its content: title, priority, assignee or delegate, labels, cycle, project, milestone, parent, due date, estimate, relations to other tickets, and linked GitHub pull requests. The description changes only through set_state and the workflow state only through set_status. Names are resolved to ids first and the whole call is refused if any is unknown or ambiguous, so nothing is half-applied. Taking a ticket from its current assignee needs take_over; another agent's ticket, or one delegated to someone else, is refused.",
     input_schema: {
       type: 'object',
       properties: {
@@ -511,6 +511,12 @@ export const strictToolDefinitions: MCPToolDefinition[] = [
           type: 'array',
           items: { type: 'string' },
           description: 'Issue identifiers that block this ticket',
+        },
+        link_prs: {
+          type: 'array',
+          items: { type: 'string' },
+          description:
+            "GitHub pull request URLs to link to this ticket, such as the promotion PR that carried the work to main. Linear's GitHub integration then records where each merged, which the Done gate reads.",
         },
       },
       required: ['issue'],
@@ -676,6 +682,7 @@ function fieldChanges(args: Args): FieldChanges {
     related_to: strings(args, 'related_to'),
     blocks: strings(args, 'blocks'),
     blocked_by: strings(args, 'blocked_by'),
+    link_prs: strings(args, 'link_prs'),
   };
 }
 

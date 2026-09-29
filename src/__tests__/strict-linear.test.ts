@@ -831,6 +831,40 @@ describe('claim and the Done gate', () => {
     expect(done.unchecked_prs).toMatch(/PR #13/);
   });
 
+  const mergedInto = (number: number, targetBranch: string) => ({
+    title: `PR ${String(number)}`,
+    url: `https://github.com/o/r/pull/${String(number)}`,
+    sourceType: 'github',
+    metadata: { number, status: 'merged', draft: false, targetBranch },
+  });
+
+  it('refuses Done when the linked PRs merged only into another branch, until the promotion PR is linked', async () => {
+    const { state, strict } = setup();
+    state.attachments.push(mergedInto(21, 'develop'));
+    const promotion = mergedInto(30, 'main');
+    state.github = { [promotion.url]: promotion.metadata };
+    await strict.claim('ENG-1');
+    await expect(strict.setStatus('ENG-1', 'Done')).rejects.toThrow(
+      /merged only into other branches \(PR #21 into develop\), and Done means the work is on main[\s\S]*git merge-base --is-ancestor[\s\S]*link_prs[\s\S]*states: .*In Progress/,
+    );
+    expect(state.issue.stateId).toBe('s-todo');
+
+    const linked = await strict.setFields('ENG-1', { link_prs: [`${promotion.url}/files#diff`] });
+    expect(linked.prs_linked).toEqual([{ url: promotion.url, target_branch: 'main' }]);
+    await expect(strict.setStatus('ENG-1', 'Done')).resolves.toMatchObject({ state: 'Done' });
+  });
+
+  it('refuses a link_prs entry that is not a GitHub pull request, before writing anything', async () => {
+    const { state, strict } = setup();
+    await expect(
+      strict.setFields('ENG-1', {
+        title: 'renamed',
+        link_prs: ['https://github.com/o/r/issues/4'],
+      }),
+    ).rejects.toThrow(/not a GitHub pull request URL/);
+    expect(state.updates).toHaveLength(0);
+  });
+
   it('needs a reason to cancel, and posts it', async () => {
     const { state, strict } = setup();
     await expect(strict.setStatus('ENG-1', 'Canceled')).rejects.toThrow(/without a reason/);

@@ -25,6 +25,8 @@ export interface FieldChanges {
   related_to?: string[] | undefined;
   blocks?: string[] | undefined;
   blocked_by?: string[] | undefined;
+  /** GitHub pull request URLs to link. */
+  link_prs?: string[] | undefined;
 }
 
 export interface FieldTarget {
@@ -69,7 +71,11 @@ export interface ResolvedFields {
   input: Record<string, unknown>;
   changed: string[];
   relations: RelationToAdd[];
+  /** GitHub pull request URLs to link, checked for form. */
+  pullRequests: string[];
 }
+
+const GITHUB_PR = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PRIORITIES = ['none', 'urgent', 'high', 'medium', 'low'];
@@ -342,12 +348,26 @@ export async function resolveFields(
     }
   }
 
-  if (changed.length === 0 && relations.length === 0) {
+  const pullRequests = (changes.link_prs ?? []).map((raw) => {
+    // A link copied from the PR's files or commits tab still names the PR.
+    const url = raw
+      .trim()
+      .replace(/[?#].*$/, '')
+      .replace(/(\/pull\/\d+)\/.*$/, '$1');
+    if (!GITHUB_PR.test(url)) {
+      throw new Error(
+        `link_prs: "${raw}" is not a GitHub pull request URL. Pass one like https://github.com/owner/repo/pull/123.`,
+      );
+    }
+    return url;
+  });
+
+  if (changed.length === 0 && relations.length === 0 && pullRequests.length === 0) {
     throw new Error(
       'Pass at least one field to change. The description changes through set_state, and the workflow state through set_status.',
     );
   }
-  return { input, changed, relations };
+  return { input, changed, relations, pullRequests };
 }
 
 export async function findUser(

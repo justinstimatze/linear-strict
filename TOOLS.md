@@ -176,7 +176,7 @@ Other arguments: `issue`, `kind` and `body` (required); `base`, required with `p
 
 ### `set_status`
 
-Moves the ticket to a workflow state by name. A completed state needs a `Done when` section with every item ticked and cited, your claim, and a description unchanged since the claim. If it changed, the refusal carries the diff; if items are open or uncited, it lists them. Tick an item with `set_state` once its check has run, citing what showed it after the item's text: `- [x] <item> · <evidence>`, where evidence is a commit SHA, a PR (`#123`), a `file:line`, a link, a CI run, `Observed 2` for a line already under Observed, or `` `command` → result ``. A cited PR that is linked to the ticket must be merged; one linked elsewhere can't be checked and passes. An item that no longer applies is dropped through `set_state` with `descope_reason`. The claim is cleared when the ticket completes. The call takes no evidence of its own, so write it into the description with `set_state` first; that is where this check, and any close-gate hook a project puts on this tool, can read it.
+Moves the ticket to a workflow state by name. A completed state needs a `Done when` section with every item ticked and cited, your claim, and a description unchanged since the claim. If it changed, the refusal carries the diff; if items are open or uncited, it lists them. Tick an item with `set_state` once its check has run, citing what showed it after the item's text: `- [x] <item> · <evidence>`, where evidence is a commit SHA, a PR (`#123`), a `file:line`, a link, a CI run, `Observed 2` for a line already under Observed, or `` `command` → result ``. A cited PR that is linked to the ticket must be merged; one linked elsewhere can't be checked and passes. When linked PRs have merged and every one of them went into a branch other than the main one (`LINEAR_STRICT_MAIN_BRANCH`, default `main`), the move is refused: merged work waiting to ship belongs in a state that isn't completed, and work that reached main through a PR not linked here needs that PR linked with `set_fields` `link_prs`. A linked release, or a merged PR with no recorded target branch, skips this check. An item that no longer applies is dropped through `set_state` with `descope_reason`. The claim is cleared when the ticket completes. The call takes no evidence of its own, so write it into the description with `set_state` first; that is where this check, and any close-gate hook a project puts on this tool, can read it.
 
 | Argument | Required | |
 |---|---|---|
@@ -184,15 +184,15 @@ Moves the ticket to a workflow state by name. A completed state needs a `Done wh
 | `state` | yes | State name, e.g. `Done` |
 | `reason` | | Why the work stops. Required for a canceled state, which skips the Done checks; posted as a comment |
 
-A cited PR whose merge status Linear's GitHub integration didn't record passes, and the result names it under `unchecked_prs`.
+A cited PR whose merge status Linear's GitHub integration didn't record passes, and the result names it under `unchecked_prs`. If the linked PRs couldn't be read, the main-branch check is skipped and `unchecked_branch` says so.
 
 ### `set_fields`
 
-Changes the fields that are not the ticket's content: title, priority (0 none to 4 low), assignee or delegate, labels, cycle, project, milestone, parent, due date, estimate, and relations. The description goes through `set_state` and the workflow state through `set_status`; neither can be set here.
+Changes the fields that are not the ticket's content: title, priority (0 none to 4 low), assignee or delegate, labels, cycle, project, milestone, parent, due date, estimate, relations, and linked pull requests. The description goes through `set_state` and the workflow state through `set_status`; neither can be set here.
 
 Names resolve to ids before anything is written: a user by name, display name, email or `"me"`; labels on the ticket's team or the workspace (not created here); a cycle by number, `"current"` or `"next"`; a project by name or id; a milestone in the ticket's project. Anything unknown or ambiguous refuses the whole call. `null` clears a field.
 
-Changing a person's assignment needs `take_over: true`. A ticket assigned to another agent, or delegated to someone else, is refused. Relations are added after the field update: `related_to`, `blocks`, and `blocked_by` each take issue identifiers.
+Changing a person's assignment needs `take_over: true`. A ticket assigned to another agent, or delegated to someone else, is refused. Relations are added after the field update: `related_to`, `blocks`, and `blocked_by` each take issue identifiers. `link_prs` takes GitHub pull request URLs and links each to the ticket, after the relations. Linear's GitHub integration records where each PR merged, and the result's `prs_linked` gives the target branch when Linear already knows it. A URL that isn't a pull request refuses the whole call before anything is written.
 
 ### `create_issue`
 

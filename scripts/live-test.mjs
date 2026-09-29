@@ -6,6 +6,10 @@
 //
 // LIVE_HUMAN_ID is only used with an agent (app) token: the issue is assigned to
 // that person so the claim has to take the delegate path.
+//
+// LIVE_PR_URL, a merged GitHub PR in a repository the workspace's GitHub
+// integration sees, adds a link_prs step. Linear's bot may comment on that PR
+// when it is linked, so pick one where a comment from a test issue is fine.
 import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -199,6 +203,21 @@ try {
   assert.ok(afterFields.issue.relations.nodes.some((r) => r.type === 'related' && r.relatedIssue.identifier === other.identifier));
   await assert.rejects(strict.setFields(id, { add_labels: ['strict-mcp-no-such-label'] }), /No label/);
   await assert.rejects(strict.setFields(id, { assignee: 'strict-mcp-nobody@example.invalid' }), /No active user/);
+
+  if (process.env.LIVE_PR_URL) {
+    step('set_fields link_prs links a GitHub PR and Linear records where it merged');
+    const linked = await strict.setFields(id, { link_prs: [process.env.LIVE_PR_URL] });
+    console.log(JSON.stringify(linked));
+    let pr = linked.prs_linked[0];
+    // The integration may fill in the branch after the mutation returns.
+    for (let tries = 0; pr.target_branch === null && tries < 10; tries++) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      const found = (await strict.getIssue(id)).pull_requests.find((p) => p.url === pr.url);
+      if (found?.targetBranch) pr = { url: pr.url, target_branch: found.targetBranch, after_s: tries + 1 };
+    }
+    console.log('target branch:', JSON.stringify(pr));
+    assert.ok(pr.target_branch, 'Linear recorded the linked PR\'s target branch');
+  }
 
   console.log('\nLIVE TEST PASSED');
 } finally {

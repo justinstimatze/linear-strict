@@ -42,6 +42,8 @@ export interface FakeState {
     metadata: Record<string, unknown>;
     subtitle?: string | null;
   }[];
+  /** What Linear's GitHub integration knows about a PR, by URL; attachmentLinkGitHubPR copies it into the attachment. */
+  github?: Record<string, Record<string, unknown>>;
   /** When set, attachmentCreate for the reconciled marker fails. */
   failMarkerUpsert?: boolean;
   relations: { issueId: string; relatedIssueId: string; type: string }[];
@@ -418,6 +420,21 @@ export function fakeGql(state: FakeState): Gql {
         const index = Number(String(variables['id']).slice('a-'.length));
         state.attachments.splice(index, 1);
         return { attachmentDelete: { success: true } };
+      }
+      case 'StrictPrLink': {
+        if (variables['issueId'] !== issue.id)
+          throw new Error(`fake Linear has no issue ${String(variables['issueId'])}`);
+        const url = String(variables['url']);
+        const known = state.github?.[url];
+        if (!known) throw new Error(`fake GitHub has no pull request ${url}`);
+        const metadata = { ...known, linkKind: 'contributes' };
+        state.attachments.push({
+          title: `PR ${String(known['number'])}`,
+          url,
+          sourceType: 'github',
+          metadata,
+        });
+        return { attachmentLinkGitHubPR: { success: true, attachment: { url, metadata } } };
       }
       case 'StrictRelationCreate':
         state.relations.push(variables['input'] as FakeState['relations'][number]);

@@ -4,6 +4,7 @@ import {
   type ShipEvidence,
   commentAuthorKind,
   mentionedPullRequests,
+  mergedOffMain,
   pullRequests,
   shippedStateFindings,
 } from '../facts.js';
@@ -128,6 +129,21 @@ describe('shipped-state evidence beyond PRs', () => {
         shippedStateFindings(DONE, develop, 'main', evidence({ releases: [release('started')] })),
       ),
     ).toEqual(['not_released']);
+  });
+
+  it('names merges that landed only off main, and nothing it cannot be sure of', () => {
+    const numbers = (prs: { number: number }[] | null) => prs?.map((p) => p.number) ?? null;
+    const develop = pullRequests([pr(5, 'merged', 'develop'), pr(7, 'open', 'main')]);
+    expect(numbers(mergedOffMain(develop, 'main', []))).toEqual([5]);
+    expect(mergedOffMain(develop, 'main', [release('started')])).toBeNull();
+    const promoted = pullRequests([pr(5, 'merged', 'develop'), pr(8, 'merged', 'main')]);
+    expect(mergedOffMain(promoted, 'main', [])).toBeNull();
+    expect(mergedOffMain(pullRequests([pr(7, 'open', 'develop')]), 'main', [])).toBeNull();
+    const untargeted = pullRequests([pr(5, 'merged', 'develop')]).map((p) => ({
+      ...p,
+      targetBranch: null,
+    }));
+    expect(mergedOffMain(untargeted, 'main', [])).toBeNull();
   });
 
   it('flags a Done ticket whose flag is dark in production, or has no production label', () => {

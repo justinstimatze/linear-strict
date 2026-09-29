@@ -80,6 +80,12 @@ export const TEAM_STATES_QUERY = `query StrictTeamStates($id: String!) {
 
 export const ISSUE_ID_QUERY = `query StrictIssueId($id: String!) { issue(id: $id) { id identifier } }`;
 
+// "contributes" links the PR without the magic-word automation "closes" carries, which would
+// move the ticket when the PR merges.
+export const PR_LINK = `mutation StrictPrLink($issueId: String!, $url: String!) {
+  attachmentLinkGitHubPR(issueId: $issueId, url: $url, linkKind: contributes) { success attachment { url metadata } }
+}`;
+
 export const RELATION_CREATE = `mutation StrictRelationCreate($input: IssueRelationCreateInput!) {
   issueRelationCreate(input: $input) { success }
 }`;

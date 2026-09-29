@@ -10,7 +10,7 @@ The server enforces its own rules. These hooks cover two things it can't do from
   - [ticketvoice](https://github.com/justinstimatze/ticketvoice), when it is on `PATH` or set in `STRICT_GATES_TICKETVOICE`. It needs v0.5.0 or later, which reads linear-strict's calls itself. It judges a comment's text and each section on their own, against that section's budget, and a section it rewords is rewritten in the call before it goes through.
   - `STRICT_GATES_REQUIRE_IMPACT=1` refuses a `set_state` that leaves the ticket with no `Impact:` line.
 
-  Any deny wins, then any ask. The script's header has the details.
+  Any deny wins, then any ask. The script's header has the details. A gate that checks a fact with one right answer, such as whether a merge is on main, should deny rather than ask: a person approving prompts across several panes reads an ask as routine and says yes. Keep ask for judgment calls.
 - **`PRSTATE`**, if set, is a command installed as a PostToolUse hook on strict `get_issue` and `list_issues`.
 
 The installer writes the settings above into the hook command itself, so set them when you run it:

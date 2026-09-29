@@ -25,7 +25,13 @@ import {
   stripMarker,
   readSection,
 } from './sections.js';
-import { type AttachmentNode, pullRequests, shippedStateFindings } from './facts.js';
+import {
+  type AttachmentNode,
+  mergedOffMain,
+  type PullRequest,
+  pullRequests,
+  shippedStateFindings,
+} from './facts.js';
 import { StrictWorkspace } from './workspace.js';
 import { MARKER_URL, type StoredMarker, markerAttachmentInput } from './marker.js';
 import {
@@ -45,6 +51,7 @@ import {
   ISSUE_UPDATE,
   MARKER_DELETE,
   MARKER_UPSERT,
+  PR_LINK,
   RELATION_CREATE,
   RELATIONS_QUERY,
   SEARCH_ISSUES_QUERY,
@@ -1332,7 +1339,12 @@ export class StrictLinear {
   async setFields(id: string, changes: FieldChanges) {
     const issue = await this.writable(id);
     const viewer = await this.viewer();
-    const { input, changed, relations } = await resolveFields(this.gql, issue, viewer, changes);
+    const { input, changed, relations, pullRequests } = await resolveFields(
+      this.gql,
+      issue,
+      viewer,
+      changes,
+    );
 
     let updatedAt = issue.updatedAt;
     if (Object.keys(input).length > 0)
@@ -1356,10 +1368,43 @@ export class StrictLinear {
       }
       added.push(relation.label);
     }
+
+    const linked: { url: string; target_branch: string | null }[] = [];
+    for (const url of pullRequests) {
+      try {
+        const data = await this.gql<{
+          attachmentLinkGitHubPR: {
+            success: boolean;
+            attachment: { url: string; metadata: Record<string, unknown> | null } | null;
+          };
+        }>(PR_LINK, { issueId: issue.id, url });
+        if (!data.attachmentLinkGitHubPR.success)
+          throw new Error('Linear reported attachmentLinkGitHubPR as unsuccessful');
+        const branch = data.attachmentLinkGitHubPR.attachment?.metadata?.['targetBranch'];
+        linked.push({ url, target_branch: typeof branch === 'string' ? branch : null });
+      } catch (error) {
+        const before = [...changed, ...added, ...linked.map((pr) => pr.url)];
+        throw new Error(
+          `${before.length > 0 ? `These landed: ${before.join(', ')}. ` : ''}Linking ${url} failed: ${errorMessage(error)}. Linear links a PR only from a repository its GitHub integration can see.`,
+          { cause: error },
+        );
+      }
+    }
     return {
       identifier: issue.identifier,
       changed,
       ...(added.length > 0 ? { relations_added: added } : {}),
+      ...(linked.length > 0
+        ? {
+            prs_linked: linked,
+            ...(linked.some((pr) => pr.target_branch === null)
+              ? {
+                  prs_note:
+                    "Linear hadn't recorded a target branch for every linked PR yet; its GitHub integration fills that in, and get_issue shows it.",
+                }
+              : {}),
+          }
+        : {}),
       updatedAt,
     };
   }
@@ -1385,8 +1430,15 @@ export class StrictLinear {
       );
     }
 
-    const unchecked =
-      target.type === 'completed' ? await this.checkDoneGate(issue, target.name, viewer) : [];
+    const { unchecked, branchUnchecked } =
+      target.type === 'completed'
+        ? await this.checkDoneGate(
+            issue,
+            target.name,
+            viewer,
+            states.map((state) => state.name),
+          )
+        : { unchecked: [], branchUnchecked: false };
 
     // Canceling ends the work without the Done checks, so it has to say why, where people will read it.
     const why = reason?.trim();
@@ -1410,15 +1462,27 @@ export class StrictLinear {
             unchecked_prs: `Linear's GitHub attachment gave no merge status for ${unchecked.join(', ')}, so whether ${unchecked.length === 1 ? 'it' : 'they'} merged was not checked.`,
           }
         : {}),
+      ...(branchUnchecked
+        ? {
+            unchecked_branch: `The linked PRs could not be read, so whether this work is on ${this.mainBranch} was not checked.`,
+          }
+        : {}),
     };
   }
 
   /**
    * The Done gate: a Done when section, a claim by this caller that has seen
    * the current description, every item ticked with a citation, and every
-   * cited PR merged. Returns the cited PRs whose merge status is unknown.
+   * cited PR merged, and, when linked PRs merged, one of them into the main
+   * branch. Returns the cited PRs whose merge status is unknown, and whether
+   * the linked PRs couldn't be read for the main-branch check.
    */
-  private async checkDoneGate(issue: IssueCore, stateName: string, viewer: Viewer) {
+  private async checkDoneGate(
+    issue: IssueCore,
+    stateName: string,
+    viewer: Viewer,
+    states: string[],
+  ): Promise<{ unchecked: string[]; branchUnchecked: boolean }> {
     const doneWhen = readSection(issue.description ?? '', 'Done when');
     if (!doneWhen?.trim()) {
       throw new Error(
@@ -1449,12 +1513,25 @@ export class StrictLinear {
         `Refusing to move ${issue.identifier} to ${stateName}: ${String(uncited.length)} ticked Done when item${uncited.length === 1 ? ' does' : 's do'} not cite what showed ${uncited.length === 1 ? 'it' : 'them'} true:\n${uncited.map(({ item, reason }) => `- [x] ${item} (${reason})`).join('\n')}\n\n${CITING}`,
       );
     }
-    return this.citedPullRequestsMerged(
-      issue.id,
+    const attachments = await this.soft<AttachmentNode>('attachments', ATTACHMENTS_QUERY, issue.id);
+    const prs = pullRequests(attachments.nodes);
+    const unchecked = citedPullRequestsMerged(
+      prs,
       issue.identifier,
       stateName,
       issue.description ?? '',
     );
+    const offMain = mergedOffMain(prs, this.mainBranch, issue.releases?.nodes ?? []);
+    if (offMain) {
+      const where = offMain
+        .map((pr) => `PR #${String(pr.number)} into ${pr.targetBranch ?? ''}`)
+        .join(', ');
+      throw new Error(
+        `Refusing to move ${issue.identifier} to ${stateName}: its linked PRs merged only into other branches (${where}), and Done means the work is on ${this.mainBranch}. If it has reached ${this.mainBranch}, find the PR that took it there, confirm the merge commit is on ${this.mainBranch} (git merge-base --is-ancestor <sha> origin/${this.mainBranch}), link that PR with set_fields link_prs, and retry. If it hasn't, move it to a state for merged work waiting to ship (states: ${states.join(', ')}).`,
+      );
+    }
+    const branchUnchecked = attachments.omitted.length > 0;
+    return { unchecked, branchUnchecked };
   }
 
   /** Posts why a ticket moved, as a comment on it. */
@@ -1470,35 +1547,6 @@ export class StrictLinear {
         { cause: error },
       );
     }
-  }
-
-  /**
-   * A PR cited on a ticked item and linked to this ticket has to be merged. A
-   * PR linked elsewhere cannot be checked from here and passes; its citation
-   * still tells a reader where to look. The status comes from the metadata
-   * Linear's GitHub integration keeps on the attachment, which Linear doesn't
-   * document, so only a status that says the PR is not merged refuses; a
-   * missing or unfamiliar one passes and is named in the result.
-   */
-  private async citedPullRequestsMerged(
-    id: string,
-    identifier: string,
-    stateName: string,
-    description: string,
-  ): Promise<string[]> {
-    const cited = citedPullRequestNumbers(description);
-    if (cited.length === 0) return [];
-    const attachments = await this.soft<AttachmentNode>('attachments', ATTACHMENTS_QUERY, id);
-    const linked = pullRequests(attachments.nodes).filter((pr) => cited.includes(pr.number));
-    const unmerged = linked.filter((pr) => pr.draft || NOT_MERGED.includes(pr.status));
-    if (unmerged.length > 0) {
-      throw new Error(
-        `Refusing to move ${identifier} to ${stateName}: a ticked Done when item cites ${unmerged.map((pr) => `PR #${String(pr.number)}, which is ${pr.draft ? 'a draft' : pr.status}`).join(' and ')}, not merged. Tick it once the PR merges, or cite the one that did.`,
-      );
-    }
-    return linked
-      .filter((pr) => pr.status !== 'merged' && !unmerged.includes(pr))
-      .map((pr) => `PR #${String(pr.number)}`);
   }
 
   async createIssue(args: CreateIssueArgs) {
@@ -1530,4 +1578,32 @@ export class StrictLinear {
     if (!data.issueCreate.success) throw new Error('Linear reported issueCreate as unsuccessful');
     return data.issueCreate.issue;
   }
+}
+
+/**
+ * A PR cited on a ticked item and linked to the ticket has to be merged. A
+ * PR linked elsewhere cannot be checked from here and passes; its citation
+ * still tells a reader where to look. The status comes from the metadata
+ * Linear's GitHub integration keeps on the attachment, which Linear doesn't
+ * document, so only a status that says the PR is not merged refuses; a
+ * missing or unfamiliar one passes and is named in the result.
+ */
+function citedPullRequestsMerged(
+  prs: PullRequest[],
+  identifier: string,
+  stateName: string,
+  description: string,
+): string[] {
+  const cited = citedPullRequestNumbers(description);
+  if (cited.length === 0) return [];
+  const linked = prs.filter((pr) => cited.includes(pr.number));
+  const unmerged = linked.filter((pr) => pr.draft || NOT_MERGED.includes(pr.status));
+  if (unmerged.length > 0) {
+    throw new Error(
+      `Refusing to move ${identifier} to ${stateName}: a ticked Done when item cites ${unmerged.map((pr) => `PR #${String(pr.number)}, which is ${pr.draft ? 'a draft' : pr.status}`).join(' and ')}, not merged. Tick it once the PR merges, or cite the one that did.`,
+    );
+  }
+  return linked
+    .filter((pr) => pr.status !== 'merged' && !unmerged.includes(pr))
+    .map((pr) => `PR #${String(pr.number)}`);
 }

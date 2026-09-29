@@ -208,6 +208,26 @@ function prFindings(
   return [];
 }
 
+/**
+ * The linked PRs that merged, when every one of them names a branch other
+ * than `mainBranch`: the case where Done would be written for work that is
+ * only on a staging branch. Null when that isn't known to be so: a release
+ * is linked (it decides shipping on its own, as in `prFindings`), no PR
+ * merged, one merged into main, or one merged without Linear recording
+ * where. The Done gate refuses on this; `not_on_main` reports the wider case.
+ */
+export function mergedOffMain(
+  prs: PullRequest[],
+  mainBranch: string,
+  releases: ReleaseNode[],
+): PullRequest[] | null {
+  if (releases.length > 0) return null;
+  const merged = prs.filter((pr) => pr.status === 'merged');
+  if (merged.length === 0) return null;
+  if (merged.some((pr) => pr.targetBranch === null || pr.targetBranch === mainBranch)) return null;
+  return merged;
+}
+
 export type AuthorKind = 'agent' | 'person' | 'unknown';
 
 /**

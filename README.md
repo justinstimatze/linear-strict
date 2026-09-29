@@ -163,7 +163,7 @@ Each ticket this server has reconciled carries one attachment titled "linear-str
 | `set_state` | Patch description sections and/or move the reconciled marker |
 | `comment` | Typed comment: `evidence`, `correction`, `ask`, `answer`, `closed_by` |
 | `set_status` | Move to a workflow state; completed states pass the Done gate |
-| `set_fields` | Priority, owner, labels, cycle, project, milestone, parent, dates and relations; never the description or state |
+| `set_fields` | Priority, owner, labels, cycle, project, milestone, parent, dates, relations and linked PRs; never the description or state |
 | `create_issue` | New ticket with validated sections |
 | `list_teams` | Teams with their workflow states in board order |
 | `list_cycles` | Cycles, active and next by default; pair a number with `list_issues` |
