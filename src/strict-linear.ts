@@ -1380,16 +1380,31 @@ export class StrictLinear {
   async setFields(id: string, changes: FieldChanges) {
     const issue = await this.writable(id);
     const viewer = await this.viewer();
-    const { input, changed, relations, pullRequests } = await resolveFields(
+    const { input, changed, relations, pullRequests, delegateTakenFrom } = await resolveFields(
       this.gql,
       issue,
-      viewer,
+      { ...viewer, principalId: this.principal?.userId },
       changes,
     );
 
     let updatedAt = issue.updatedAt;
     if (Object.keys(input).length > 0)
       updatedAt = (await this.updateIssue(issue.id, input)).updatedAt;
+
+    let takeOverComment: string | undefined;
+    if (delegateTakenFrom) {
+      const label = viewer.app ? nameOf(viewer) : `agent via ${nameOf(viewer)}`;
+      const to = changed.find((c) => c.startsWith('delegate ')) ?? 'delegate';
+      const body = `🤖 ${label} · ${this.today()} · take over\n\nMoved the delegation from ${delegateTakenFrom} on behalf of ${nameOf(issue.assignee ?? viewer)}, the assignee: ${to}.`;
+      try {
+        takeOverComment = (await this.postComment(issue.id, body)).url;
+      } catch (error) {
+        throw new Error(
+          `${issue.identifier}'s delegation moved from ${delegateTakenFrom}, but the comment recording it did not post: ${errorMessage(error)}. Post it with comment kind evidence.`,
+          { cause: error },
+        );
+      }
+    }
 
     const added: string[] = [];
     for (const relation of relations) {
@@ -1434,6 +1449,7 @@ export class StrictLinear {
     return {
       identifier: issue.identifier,
       changed,
+      ...(takeOverComment ? { take_over_comment: takeOverComment } : {}),
       ...(added.length > 0 ? { relations_added: added } : {}),
       ...(linked.length > 0
         ? {

@@ -48,6 +48,8 @@ interface Owner {
 interface Viewer {
   id: string;
   name: string;
+  /** The human this identity acts for (LINEAR_PRINCIPAL_ID), when one is wired. */
+  principalId?: string | undefined;
 }
 
 interface UserNode {
@@ -73,6 +75,8 @@ export interface ResolvedFields {
   relations: RelationToAdd[];
   /** GitHub pull request URLs to link, checked for form. */
   pullRequests: string[];
+  /** The agent a delegation was taken from on the owner's behalf, for the audit comment. */
+  delegateTakenFrom?: string | undefined;
 }
 
 const GITHUB_PR = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/;
@@ -112,6 +116,7 @@ export async function resolveFields(
   const input: Record<string, unknown> = {};
   const changed: string[] = [];
   const relations: RelationToAdd[] = [];
+  let delegateTakenFrom: string | undefined;
 
   if (changes.title !== undefined) {
     const title = changes.title.trim();
@@ -151,9 +156,23 @@ export async function resolveFields(
     const current = issue.delegate;
     const target = changes.delegate === null ? null : await findUser(gql, changes.delegate, viewer);
     if (current && current.id !== viewer.id && current.id !== target?.id) {
-      throw new Error(
-        `${issue.identifier} is delegated to ${nameOf(current)}. Ask them to release it first.`,
-      );
+      // The ticket's assignee can move its delegation in Linear's UI, so an
+      // agent acting for that assignee may too: this is how a ticket gets
+      // back from an agent that has stopped running. Anyone else still has
+      // to ask the delegate.
+      const owner = issue.assignee;
+      const actsForOwner = !!viewer.principalId && owner?.id === viewer.principalId;
+      if (!actsForOwner) {
+        throw new Error(
+          `${issue.identifier} is delegated to ${nameOf(current)}. Ask them to release it first.`,
+        );
+      }
+      if (!changes.take_over) {
+        throw new Error(
+          `${issue.identifier} is delegated to ${nameOf(current)}. It is assigned to ${nameOf(owner)}, whom you act for, so you may move it: pass take_over: true, and only when ${nameOf(current)} has stopped working it. A comment will record the move.`,
+        );
+      }
+      delegateTakenFrom = nameOf(current);
     }
     input['delegateId'] = target?.id ?? null;
     changed.push(target ? `delegate (${nameOf(target)})` : 'delegate (cleared)');
@@ -367,7 +386,7 @@ export async function resolveFields(
       'Pass at least one field to change. The description changes through set_state, and the workflow state through set_status.',
     );
   }
-  return { input, changed, relations, pullRequests };
+  return { input, changed, relations, pullRequests, delegateTakenFrom };
 }
 
 export async function findUser(

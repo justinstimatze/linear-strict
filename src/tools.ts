@@ -483,7 +483,7 @@ export const strictToolDefinitions: MCPToolDefinition[] = [
   {
     name: 'set_fields',
     description:
-      "Change a ticket's fields other than its content: title, priority, assignee or delegate, labels, cycle, project, milestone, parent, due date, estimate, relations to other tickets, and linked GitHub pull requests. The description changes only through set_state and the workflow state only through set_status. Names are resolved to ids first and the whole call is refused if any is unknown or ambiguous, so nothing is half-applied. Taking a ticket from its current assignee needs take_over; another agent's ticket, or one delegated to someone else, is refused.",
+      "Change a ticket's fields other than its content: title, priority, assignee or delegate, labels, cycle, project, milestone, parent, due date, estimate, relations to other tickets, and linked GitHub pull requests. The description changes only through set_state and the workflow state only through set_status. Names are resolved to ids first and the whole call is refused if any is unknown or ambiguous, so nothing is half-applied. Taking a ticket from its current assignee needs take_over; another agent's ticket is refused, and so is one delegated to someone else unless it is assigned to the human this identity acts for (LINEAR_PRINCIPAL_ID): then take_over moves the delegation and a comment records it.",
     input_schema: {
       type: 'object',
       properties: {
@@ -500,7 +500,8 @@ export const strictToolDefinitions: MCPToolDefinition[] = [
         },
         take_over: {
           type: 'boolean',
-          description: "Required to change a person's assignment to someone else",
+          description:
+            "Required to change a person's assignment to someone else, or to move a delegation off another agent on a ticket assigned to the human you act for",
         },
         add_labels: {
           type: 'array',

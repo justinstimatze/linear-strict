@@ -112,6 +112,53 @@ describe('set_fields', () => {
     );
   });
 
+  it("moves another agent's delegation only on the principal's own ticket, only with take_over, and records it", async () => {
+    const agentB = { id: 'u-agent-b', name: 'agent-b', displayName: 'agent-b', app: true };
+    const grace = { id: 'u-grace', name: 'Grace', displayName: 'Grace' };
+    const forGrace = (overrides: Partial<FakeState> = {}) => {
+      const state = fakeState(overrides);
+      const gql = fakeGql(state);
+      const strict = new StrictLinear({
+        gql,
+        claims: memoryClaimStore(),
+        now: () => new Date('2026-09-24T12:00:00Z'),
+        principal: { gql, userId: 'u-grace' },
+      });
+      return { state, strict };
+    };
+
+    const owned = forGrace();
+    owned.state.issue.assignee = grace;
+    owned.state.issue.delegate = agentB;
+    await expect(owned.strict.setFields('ENG-1', { delegate: 'me' })).rejects.toThrow(
+      /assigned to Grace, whom you act for[\s\S]*take_over: true/,
+    );
+    expect(owned.state.updates).toEqual([]);
+
+    const result = await owned.strict.setFields('ENG-1', { delegate: 'me', take_over: true });
+    expect(owned.state.issue.delegate.id).toBe('u-agent');
+    expect(result.take_over_comment).toMatch(/#comment-/);
+    expect(owned.state.comments.at(-1)?.body).toMatch(
+      /take over[\s\S]*from agent-b on behalf of Grace/,
+    );
+
+    // A ticket assigned to someone the identity does not act for stays refused.
+    const others = forGrace();
+    others.state.issue.assignee = { id: 'u-ada', name: 'Ada', displayName: 'Ada' };
+    others.state.issue.delegate = agentB;
+    await expect(
+      others.strict.setFields('ENG-1', { delegate: 'me', take_over: true }),
+    ).rejects.toThrow(/release it first/);
+
+    // So does any identity with no principal wired.
+    const unwired = setup();
+    unwired.state.issue.assignee = grace;
+    unwired.state.issue.delegate = agentB;
+    await expect(
+      unwired.strict.setFields('ENG-1', { delegate: 'me', take_over: true }),
+    ).rejects.toThrow(/release it first/);
+  });
+
   it('adds relations in the direction Linear reads them', async () => {
     const { state, strict } = setup({
       others: [
