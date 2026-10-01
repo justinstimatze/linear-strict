@@ -16,7 +16,16 @@ save_issue | linear_updateIssue)
   instead="set_state for the description, set_status for the workflow state, $fields, or create_issue for a new ticket"
   ;;
 linear_createIssue | linear_createIssueFromTemplate | linear_duplicateIssue) instead="create_issue" ;;
-save_comment | delete_comment | linear_createComment | linear_updateComment | linear_deleteComment)
+save_comment | linear_createComment)
+  # strict's comment takes an issue only, so a new comment on an initiative update, project update or
+  # document has no strict equivalent and passes. An edit (id) or a reply (parentId) is still refused,
+  # since either can land in an issue's thread without naming the issue.
+  if jq -e '.tool_input | (.issueId // .issue // .issue_id // .id // .parentId // "") == ""' <<<"$payload" >/dev/null; then
+    exit 0
+  fi
+  instead="comment (kinds evidence, correction, ask, answer, closed_by); comments are not edited or deleted"
+  ;;
+delete_comment | linear_updateComment | linear_deleteComment)
   instead="comment (kinds evidence, correction, ask, answer, closed_by); comments are not edited or deleted"
   ;;
 linear_archiveIssue | linear_transferIssue)
