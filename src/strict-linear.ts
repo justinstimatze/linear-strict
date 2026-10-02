@@ -261,6 +261,16 @@ export class StrictLinear {
   private readonly principal: { gql: Gql; userId: string } | undefined;
   private readonly principalWorkspace: StrictWorkspace | undefined;
   private principalViewerCache: Viewer | null = null;
+  /**
+   * Every principal notification get_principal_notifications has returned in
+   * this process, by id. mark_principal_notifications_read writes only these:
+   * the principal token can write anything its human can, and this list is
+   * what narrows it to marking read what an agent was actually shown.
+   */
+  private readonly principalShown = new Map<
+    string,
+    { actorKind: string; createdAt: string; read: boolean }
+  >();
   private readonly overlapReader: OverlapReader | undefined;
   private readonly titles: TeamTitles;
 
@@ -301,9 +311,87 @@ export class StrictLinear {
    * loudly here rather than silently serving whoever it happens to belong
    * to.
    */
-  async principalNotifications(
-    args: Parameters<StrictWorkspace['notifications']>[0],
-  ): Promise<ReturnType<StrictWorkspace['notifications']>> {
+  async principalNotifications(args: Parameters<StrictWorkspace['notifications']>[0]) {
+    const inbox = await this.principalInbox();
+    const result = await inbox.notifications(args);
+    for (const n of result.notifications)
+      this.principalShown.set(n.id, {
+        actorKind: n.actor_kind,
+        createdAt: n.created_at,
+        read: n.read,
+      });
+    return result;
+  }
+
+  /**
+   * Marks the principal's notifications read: the ids given, or with
+   * only_agent_actors every unread one an agent or integration caused,
+   * optionally only those created before a date. Either way only
+   * notifications get_principal_notifications returned in this process.
+   */
+  async markPrincipalNotificationsRead(args: {
+    ids?: string[] | undefined;
+    only_agent_actors?: boolean | undefined;
+    before?: string | undefined;
+  }) {
+    const bulk = args.only_agent_actors === true;
+    if (bulk === (args.ids !== undefined))
+      throw new Error(
+        'Pass either ids (from get_principal_notifications) or only_agent_actors: true, not both and not neither.',
+      );
+    if (args.before !== undefined && (!bulk || Number.isNaN(Date.parse(args.before))))
+      throw new Error(
+        'before goes with only_agent_actors, as an ISO date or timestamp, e.g. 2026-10-02',
+      );
+    const inbox = await this.principalInbox();
+    const unknown: string[] = [];
+    let ids: string[];
+    if (bulk) {
+      const cutoff = args.before === undefined ? Infinity : Date.parse(args.before);
+      ids = [...this.principalShown]
+        .filter(([, n]) => n.actorKind === 'agent' && !n.read && Date.parse(n.createdAt) < cutoff)
+        .map(([id]) => id);
+      if (ids.length === 0)
+        return {
+          results: [],
+          note: 'No unread notification from an agent among those get_principal_notifications has returned in this server. Read the inbox with it first; only what it returned can be marked.',
+        };
+    } else {
+      ids = (args.ids ?? []).filter((id) => {
+        if (this.principalShown.has(id)) return true;
+        unknown.push(id);
+        return false;
+      });
+    }
+    const marked =
+      ids.length > 0 ? await inbox.markNotificationsRead(ids) : { results: [], read_at: null };
+    const readOnly = marked.results.find(
+      (r) => 'error' in r && /scope|forbidden|permission/i.test(r.error),
+    );
+    if (readOnly)
+      throw new Error(
+        'LINEAR_PRINCIPAL_TOKEN is read-only, so nothing was marked: pennon mints the inbox token without write access unless the principal opts in (inbox_write in principals.json). Stop here and tell your user; another credential is not the fix.',
+      );
+    for (const r of marked.results) {
+      const shown = this.principalShown.get(r.id);
+      if (shown && r.read) shown.read = true;
+    }
+    return {
+      results: [
+        ...marked.results,
+        ...unknown.map((id) => ({
+          id,
+          read: false,
+          error:
+            'not returned by get_principal_notifications in this server, so not marked: only notifications an agent was shown can be marked read',
+        })),
+      ],
+      read_at: marked.read_at,
+    };
+  }
+
+  /** The principal's inbox, once its token is checked against the id pennon wired with it. */
+  private async principalInbox(): Promise<StrictWorkspace> {
     if (!this.principal || !this.principalWorkspace) {
       throw new Error(
         'LINEAR_PRINCIPAL_TOKEN is not configured for this identity — nothing to read. Set it (and LINEAR_PRINCIPAL_ID) via pennon onboard, or in principals.json for the human this identity acts for.',
@@ -318,7 +406,7 @@ export class StrictLinear {
       }
       this.principalViewerCache = data.viewer;
     }
-    return this.principalWorkspace.notifications(args);
+    return this.principalWorkspace;
   }
 
   private async core(id: string): Promise<IssueCore> {

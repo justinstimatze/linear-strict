@@ -315,6 +315,39 @@ export const strictToolDefinitions: MCPToolDefinition[] = [
     annotations: READ,
   },
   {
+    name: 'mark_principal_notifications_read',
+    description:
+      'Mark notifications in the inbox of the human this identity acts for as read — the write twin of get_principal_notifications, separate from mark_notifications_read so which inbox is written is never ambiguous. Only notifications get_principal_notifications returned in this server can be marked; others are refused per id. Pass ids, or only_agent_actors: true to mark every unread one an agent or integration caused (fleet bookkeeping), optionally only those created before a date. Needs a principal token with write access; a read-only one is refused with what to tell your user.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        ids: {
+          type: 'array',
+          items: { type: 'string' },
+          minItems: 1,
+          description: 'Ids from get_principal_notifications',
+        },
+        only_agent_actors: {
+          type: 'boolean',
+          description:
+            'Mark every unread notification an agent or integration caused, among those get_principal_notifications returned',
+        },
+        before: {
+          type: 'string',
+          description:
+            'With only_agent_actors: only those created before this date, e.g. 2026-10-02',
+        },
+      },
+    },
+    output_schema: ANY_OBJECT,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  },
+  {
     name: 'mark_notifications_read',
     description: 'Mark notifications read once you have handled them. Reports each id separately.',
     input_schema: {
@@ -793,6 +826,21 @@ export function strictToolHandlers(
         after: opt(args, 'after'),
       }),
     ),
+    mark_principal_notifications_read: withArgs((args) => {
+      const ids = args['ids'];
+      if (
+        ids !== undefined &&
+        (!Array.isArray(ids) ||
+          !ids.every((id): id is string => typeof id === 'string' && id !== ''))
+      ) {
+        throw new Error('ids must be a list of notification ids from get_principal_notifications');
+      }
+      return strict.markPrincipalNotificationsRead({
+        ids,
+        only_agent_actors: bool(args, 'only_agent_actors'),
+        before: opt(args, 'before'),
+      });
+    }),
     mark_notifications_read: withArgs((args) => {
       const ids = args['ids'];
       if (

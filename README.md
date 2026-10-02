@@ -171,6 +171,7 @@ Each ticket this server has reconciled carries one attachment titled "linear-str
 | `list_projects`, `list_initiatives` | Open projects and initiatives with status, owner and dates |
 | `notifications` | Your inbox as pointers (ticket, type, actor, time), no excerpt text, paginated |
 | `get_principal_notifications` | The same, for the human this identity acts for, on their own credential — needs `LINEAR_PRINCIPAL_TOKEN`/`LINEAR_PRINCIPAL_ID` configured |
+| `mark_principal_notifications_read` | Mark the principal's notifications read: ones `get_principal_notifications` returned, by id or every one an agent caused |
 | `mark_notifications_read` | Mark handled notifications read |
 | `whoami` | The user or app behind the token, which is who claims and `_is_me` filters mean |
 

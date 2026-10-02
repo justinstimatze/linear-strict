@@ -21,6 +21,7 @@ const strictToolNames = [
   'list_initiatives',
   'notifications',
   'get_principal_notifications',
+  'mark_principal_notifications_read',
   'mark_notifications_read',
   'set_fields',
   'whoami',

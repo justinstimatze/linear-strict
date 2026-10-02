@@ -237,6 +237,95 @@ describe('principalNotifications', () => {
   });
 });
 
+describe('markPrincipalNotificationsRead', () => {
+  function principalSetup(readOnly = false) {
+    const { gql: ownGql, calls: ownCalls } = fakeGql(() => ({ issues: page([], null) }));
+    const { gql: principalGql, calls } = fakeGql((op, variables) => {
+      if (op === 'StrictViewer')
+        return { viewer: { id: 'u-principal', name: 'Ada', displayName: 'Ada', app: false } };
+      if (op === 'StrictNotificationRead') {
+        if (readOnly) throw new Error('Forbidden: write scope required');
+        return { notificationUpdate: { success: typeof variables['id'] === 'string' } };
+      }
+      return {
+        notificationsUnreadCount: 3,
+        notifications: page([note(1, false, true), note(2, false), note(3, false, true)], null),
+      };
+    });
+    const strict = new StrictLinear({
+      gql: ownGql,
+      claims: memoryClaimStore(),
+      principal: { gql: principalGql, userId: 'u-principal' },
+    });
+    return { strict, calls, ownCalls };
+  }
+  const marked = (calls: { op: string; variables: Record<string, unknown> }[]) =>
+    calls.filter((c) => c.op === 'StrictNotificationRead').map((c) => c.variables['id']);
+
+  it('marks only ids get_principal_notifications returned, refusing the rest per id', async () => {
+    const { strict, calls, ownCalls } = principalSetup();
+    await strict.principalNotifications({});
+    const result = await strict.markPrincipalNotificationsRead({ ids: ['n-2', 'n-99'] });
+    expect(marked(calls)).toEqual(['n-2']);
+    expect(ownCalls.map((c) => c.op)).not.toContain('StrictNotificationRead');
+    expect(result.results).toEqual([
+      { id: 'n-2', read: true },
+      {
+        id: 'n-99',
+        read: false,
+        error: expect.stringMatching(/not returned by get_principal_notifications/) as unknown,
+      },
+    ]);
+  });
+
+  it('marks every unread one an agent caused, and only before a date when given', async () => {
+    const all = principalSetup();
+    await all.strict.principalNotifications({});
+    await all.strict.markPrincipalNotificationsRead({ only_agent_actors: true });
+    expect(marked(all.calls)).toEqual(['n-1', 'n-3']);
+    // Already marked: a second sweep finds nothing left.
+    const again = await all.strict.markPrincipalNotificationsRead({ only_agent_actors: true });
+    expect(again.results).toEqual([]);
+
+    const dated = principalSetup();
+    await dated.strict.principalNotifications({});
+    await dated.strict.markPrincipalNotificationsRead({
+      only_agent_actors: true,
+      before: '2026-09-28T00:00:00Z',
+    });
+    expect(marked(dated.calls)).toEqual(['n-3']);
+  });
+
+  it('marks nothing before the inbox has been read in this server', async () => {
+    const { strict, calls } = principalSetup();
+    const result = await strict.markPrincipalNotificationsRead({ only_agent_actors: true });
+    expect(result).toMatchObject({
+      results: [],
+      note: expect.stringMatching(/Read the inbox/) as unknown,
+    });
+    expect(marked(calls)).toEqual([]);
+  });
+
+  it('says the token is read-only instead of passing on the scope error', async () => {
+    const { strict } = principalSetup(true);
+    await strict.principalNotifications({});
+    await expect(strict.markPrincipalNotificationsRead({ ids: ['n-1'] })).rejects.toThrow(
+      /LINEAR_PRINCIPAL_TOKEN is read-only.*another credential is not the fix/,
+    );
+  });
+
+  it('wants ids or only_agent_actors, exactly one', async () => {
+    const { strict } = principalSetup();
+    await expect(strict.markPrincipalNotificationsRead({})).rejects.toThrow(/either ids/);
+    await expect(
+      strict.markPrincipalNotificationsRead({ ids: ['n-1'], only_agent_actors: true }),
+    ).rejects.toThrow(/either ids/);
+    await expect(
+      strict.markPrincipalNotificationsRead({ ids: ['n-1'], before: '2026-09-28' }),
+    ).rejects.toThrow(/before goes with only_agent_actors/);
+  });
+});
+
 describe('list_issues cycle and project filters', () => {
   it('filters by cycle within a team and by project name or id', async () => {
     const { gql, calls } = fakeGql(() => ({ issues: page([], null) }));

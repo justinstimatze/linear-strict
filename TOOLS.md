@@ -97,7 +97,7 @@ When `has_more` is true, pass `next_cursor` as `after`. If a later page fails, t
 
 ### `get_principal_notifications`
 
-The inbox of the human this identity acts for, not the identity's own — same arguments and shape as `notifications`, a deliberately separate tool rather than a parameter, so which inbox a call reads is never ambiguous. Needs `LINEAR_PRINCIPAL_TOKEN` and `LINEAR_PRINCIPAL_ID` set in the server's environment; refuses if either is missing, and refuses if the token resolves to a different Linear user than `LINEAR_PRINCIPAL_ID` names. Read-only: there is no `mark_principal_notifications_read`.
+The inbox of the human this identity acts for, not the identity's own — same arguments and shape as `notifications`, a deliberately separate tool rather than a parameter, so which inbox a call reads is never ambiguous. Needs `LINEAR_PRINCIPAL_TOKEN` and `LINEAR_PRINCIPAL_ID` set in the server's environment; refuses if either is missing, and refuses if the token resolves to a different Linear user than `LINEAR_PRINCIPAL_ID` names. `mark_principal_notifications_read` is its write twin.
 
 | Argument | Required | |
 |---|---|---|
@@ -105,6 +105,16 @@ The inbox of the human this identity acts for, not the identity's own — same a
 | `since` | | Only notifications created on or after this date |
 | `first` | | How many to return, 1–100, default 50 |
 | `after` | | `next_cursor` from the previous call |
+
+### `mark_principal_notifications_read`
+
+Marks notifications in the principal's inbox read. Only notifications `get_principal_notifications` returned in this server process can be marked; any other id is refused in its own result. The principal token can write anything its human can, and this list is what narrows it to marking read what an agent was shown. Pass `ids`, or `only_agent_actors: true` to mark every unread one whose actor is an agent or integration, optionally only those created before `before`. A principal token without write access is refused with a message saying so, rather than Linear's scope error.
+
+| Argument | Required | |
+|---|---|---|
+| `ids` | one of | Ids from `get_principal_notifications` |
+| `only_agent_actors` | one of | `true`: every unread one an agent or integration caused |
+| `before` | | With `only_agent_actors`, only those created before this date |
 
 ### `mark_notifications_read`
 
