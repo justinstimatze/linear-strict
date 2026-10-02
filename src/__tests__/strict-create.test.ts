@@ -24,12 +24,147 @@ const close = [
 ];
 
 describe('create_issue', () => {
-  it('refuses a ticket with no parent or project, before any call', async () => {
-    const { state, strict } = setup();
+  it("refuses a ticket with no parent or project, listing the team's open projects", async () => {
+    const { state, strict } = setup({
+      projects: [
+        { id: 'p-later', name: 'Later', status: 'backlog' },
+        { id: 'p-alpha', name: 'Alpha launch' },
+      ],
+    });
+    const attempt = strict.createIssue({ team: 'ENG', title: 'Logs keep chats' });
+    await expect(attempt).rejects.toThrow(/needs a home.*parent.*project_id/);
+    // Work under way first, so the likeliest home is at the top.
+    await expect(attempt).rejects.toThrow(/- Alpha launch \(p-alpha\)\n- Later \(p-later\)/);
+    expect(state.created).toEqual([]);
+    expect(state.calls.map((c) => c.operation)).not.toContain('StrictOverlap');
+  });
+
+  it("refuses, saying why, when the team's projects cannot be read", async () => {
+    const { state, strict } = setup({ projectsFail: true });
     await expect(strict.createIssue({ team: 'ENG', title: 'Logs keep chats' })).rejects.toThrow(
-      /needs a home.*parent.*project_id/,
+      /reading the team's projects failed \(projects unavailable\).*project_id/,
     );
-    expect(state.calls).toEqual([]);
+    expect(state.created).toEqual([]);
+  });
+
+  it('files without a home on a team with no open projects, and says so', async () => {
+    const { state, strict } = setup({ projects: [] });
+    const result = await strict.createIssue({ team: 'ENG', title: 'Logs keep chats' });
+    expect(state.created).toEqual([{ teamId: 't-1', title: 'Logs keep chats' }]);
+    expect(result.home_note).toMatch(/no open projects/);
+  });
+
+  it("puts a sub-ticket in its parent's project", async () => {
+    const { state, strict } = setup();
+    state.issue.project = { id: 'p-alpha', name: 'Alpha launch' };
+    const result = await strict.createIssue({
+      team: 'ENG',
+      title: 'Backups keep chats',
+      parent: 'ENG-1',
+    });
+    expect(state.created).toEqual([
+      { teamId: 't-1', title: 'Backups keep chats', projectId: 'p-alpha', parentId: 'issue-1' },
+    ]);
+    expect(result.project).toBe('Alpha launch');
+  });
+
+  it('refuses a sub-ticket whose parent has no project, pointing at the parent', async () => {
+    const { state, strict } = setup();
+    const attempt = strict.createIssue({
+      team: 'ENG',
+      title: 'Backups keep chats',
+      parent: 'ENG-1',
+    });
+    await expect(attempt).rejects.toThrow(
+      /ENG-1 has no project.*Give ENG-1 a project with set_fields/,
+    );
+    await expect(attempt).rejects.toThrow(/- Alpha launch \(p-alpha\)/);
+    expect(state.created).toEqual([]);
+  });
+
+  it("suggests the project most of the parent's sub-tickets are in", async () => {
+    const { strict } = setup({
+      neighbours: {
+        parent: null,
+        children: [
+          { project: { id: 'p-alpha' } },
+          { project: { id: 'p-alpha' } },
+          { project: null },
+        ],
+      },
+    });
+    await expect(
+      strict.createIssue({ team: 'ENG', title: 'Backups keep chats', parent: 'ENG-1' }),
+    ).rejects.toThrow(
+      /ENG-1 probably belongs in Alpha launch \(p-alpha\), since 2 of its 3 open sub-tickets are in it/,
+    );
+  });
+
+  it('says so when the suggestion rests only on closed sub-tickets', async () => {
+    const { strict } = setup({
+      neighbours: {
+        parent: null,
+        children: [
+          { project: { id: 'p-alpha' }, state: { type: 'completed' } },
+          { project: null, state: { type: 'canceled' } },
+        ],
+      },
+    });
+    await expect(
+      strict.createIssue({ team: 'ENG', title: 'Backups keep chats', parent: 'ENG-1' }),
+    ).rejects.toThrow(/1 of its 2 sub-tickets are in it, though none of those is still open/);
+  });
+
+  it("lists the projects closest to the ticket's text first, as a hint, then the rest", async () => {
+    const { strict } = setup({
+      projects: [
+        { id: 'p-alpha', name: 'Alpha launch' },
+        { id: 'p-beta', name: 'Beta launch' },
+        { id: 'p-later', name: 'Later', status: 'backlog' },
+      ],
+      closestProjects: ['p-later', 'p-gone'],
+    });
+    const attempt = strict.createIssue({ team: 'ENG', title: 'Logs keep chats' });
+    await expect(attempt).rejects.toThrow(
+      /Closest to this ticket's text, by Linear's semantic search \(a hint, not a match\):\n- Later \(p-later\)\nThe team's other open projects:\n- Alpha launch \(p-alpha\)\n- Beta launch \(p-beta\)\nIf none fits/,
+    );
+  });
+
+  it("suggests the parent's own parent's project first, and no project on a tie", async () => {
+    const above = setup({
+      neighbours: { parent: { identifier: 'ENG-0', project: { id: 'p-alpha' } }, children: [] },
+    });
+    await expect(
+      above.strict.createIssue({ team: 'ENG', title: 'Backups keep chats', parent: 'ENG-1' }),
+    ).rejects.toThrow(/probably belongs in Alpha launch.*its own parent ENG-0 is in it/);
+    const tied = setup({
+      projects: [
+        { id: 'p-alpha', name: 'Alpha launch' },
+        { id: 'p-beta', name: 'Beta launch' },
+      ],
+      neighbours: {
+        parent: null,
+        children: [{ project: { id: 'p-alpha' } }, { project: { id: 'p-beta' } }],
+      },
+    });
+    await expect(
+      tied.strict.createIssue({ team: 'ENG', title: 'Backups keep chats', parent: 'ENG-1' }),
+    ).rejects.not.toThrow(/probably belongs/);
+  });
+
+  it("does not inherit a closed project, or another team's", async () => {
+    const closed = setup();
+    closed.state.issue.project = { id: 'p-old', name: 'Old', status: { type: 'completed' } };
+    await expect(
+      closed.strict.createIssue({ team: 'ENG', title: 'Backups keep chats', parent: 'ENG-1' }),
+    ).rejects.toThrow(/ENG-1 is in Old, which is completed/);
+    const other = setup();
+    other.state.issue.project = { id: 'p-alpha', name: 'Alpha launch' };
+    other.state.issue.team = { id: 't-2', key: 'OPS', name: 'Operations' };
+    await expect(
+      other.strict.createIssue({ team: 'ENG', title: 'Backups keep chats', parent: 'ENG-1' }),
+    ).rejects.toThrow(/ENG-1 is on another team.*Pass project_id for this ticket/);
+    expect([...closed.state.created, ...other.state.created]).toEqual([]);
   });
 
   it('refuses until the filer places the work against each close open ticket', async () => {
@@ -41,6 +176,8 @@ describe('create_issue', () => {
     });
     await expect(attempt).rejects.toThrow(/Nothing was filed: these open tickets/);
     await expect(attempt).rejects.toThrow(/ENG-7 \[Triage\] Deleted chats[\s\S]*ENG-9 \[Todo\]/);
+    // A search names no shared work, so its tickets carry no why line.
+    await expect(attempt).rejects.not.toThrow(/why:/);
     await expect(attempt).rejects.toThrow(/parent set to it[\s\S]*file nothing[\s\S]*new_because/);
     await expect(attempt).rejects.toMatchObject({
       name: 'OverlapRefusal',
@@ -89,9 +226,14 @@ describe('create_issue', () => {
 
   it('files a sub-ticket without the search', async () => {
     const { state, strict } = setup({ closeTickets: close });
-    await strict.createIssue({ team: 'ENG', title: 'Backups keep chats', parent: 'ENG-1' });
+    await strict.createIssue({
+      team: 'ENG',
+      title: 'Backups keep chats',
+      parent: 'ENG-1',
+      project_id: 'p-alpha',
+    });
     expect(state.created).toEqual([
-      { teamId: 't-1', title: 'Backups keep chats', parentId: 'issue-1' },
+      { teamId: 't-1', title: 'Backups keep chats', projectId: 'p-alpha', parentId: 'issue-1' },
     ]);
     expect(state.calls.map((c) => c.operation)).not.toContain('StrictOverlap');
   });
@@ -202,18 +344,33 @@ describe('create_issue with a model reading the open titles', () => {
       (list, ticket) => {
         lists.push(list);
         expect(ticket).toBe('THE NEW TICKET\nTitle: Logs keep chats\n\n(no description)');
-        return Promise.resolve(['eng-12', 'ENG-404', 'ENG-12']);
+        return Promise.resolve([
+          { identifier: 'eng-12', reason: 'both change how long the log drain keeps chats' },
+          { identifier: 'ENG-404', reason: 'not open' },
+          { identifier: 'ENG-12', reason: 'again' },
+        ]);
       },
     );
     await expect(
       strict.createIssue({ team: 'ENG', title: 'Logs keep chats', project_id: 'p-alpha' }),
     ).rejects.toMatchObject({
       name: 'OverlapRefusal',
-      candidates: [{ identifier: 'ENG-12', state: 'Backlog' }],
+      candidates: [
+        {
+          identifier: 'ENG-12',
+          state: 'Backlog',
+          why: 'both change how long the log drain keeps chats',
+        },
+      ],
     });
     expect(lists).toEqual([
       'ENG-7 Deleted chats survive in the logs\nENG-12 Log drain keeps chats',
     ]);
+    await expect(
+      strict.createIssue({ team: 'ENG', title: 'Logs keep chats', project_id: 'p-alpha' }),
+    ).rejects.toThrow(
+      /ENG-12 \[Backlog\] Log drain keeps chats\n {2}why: both change how long the log drain keeps chats/,
+    );
     const ops = state.calls.map((c) => c.operation);
     expect(ops).not.toContain('StrictOverlap');
     expect(ops).not.toContain('StrictOverlapKeyword');
@@ -339,12 +496,26 @@ describe('create_issue with a model reading the open titles', () => {
           sent.push(JSON.parse(init.body) as Record<string, unknown>);
         return Promise.resolve(
           new Response(
-            JSON.stringify({ content: [{ type: 'text', text: '{"identifiers":["ENG-7"]}' }] }),
+            JSON.stringify({
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify({
+                    overlaps: [
+                      { identifier: 'ENG-7', reason: '  both   drop\nlogs ' },
+                      { reason: 'x' },
+                    ],
+                  }),
+                },
+              ],
+            }),
           ),
         );
       },
     });
-    expect(await read('ENG-7 [Triage] x', 'Title: y')).toEqual(['ENG-7']);
+    expect(await read('ENG-7 x', 'Title: y')).toEqual([
+      { identifier: 'ENG-7', reason: 'both drop logs' },
+    ]);
     expect(sent[0]).toMatchObject({
       model: 'claude-sonnet-5-5',
       output_config: { format: { type: 'json_schema' } },
@@ -359,5 +530,18 @@ describe('create_issue with a model reading the open titles', () => {
         ),
     });
     await expect(failing('l', 't')).rejects.toThrow(/401 bad key/);
+    const cut = overlapReader({
+      apiKey: 'k',
+      fetch: () =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              stop_reason: 'max_tokens',
+              content: [{ type: 'text', text: '{"overlaps":[{"identifier":"ENG' }],
+            }),
+          ),
+        ),
+    });
+    await expect(cut('l', 't')).rejects.toThrow(/ran past its length limit/);
   });
 });

@@ -31,7 +31,7 @@ export interface IssueCore {
   delegate: Person | null;
   creator: Person | null;
   parent: { id: string; identifier: string; title: string } | null;
-  project: { id: string; name: string } | null;
+  project: { id: string; name: string; status?: { type: string } | null } | null;
   releases?: Connection<ReleaseNode>;
   labels: Connection<{ id: string; name: string }>;
   markerAttachment?: { nodes: MarkerAttachment[] };

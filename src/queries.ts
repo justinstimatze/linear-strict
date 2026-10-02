@@ -17,7 +17,7 @@ const ISSUE_CORE = `
   delegate { id name displayName }
   creator { id name displayName }
   parent { id identifier title }
-  project { id name }
+  project { id name status { type } }
   releases(first: 20) { nodes { name version url completedAt stage { name type } } ${PAGE_INFO} }
   labels(first: 100) { nodes { id name } ${PAGE_INFO} }
   markerAttachment: attachments(first: 5, filter: { url: { in: ${JSON.stringify(MARKER_URLS)} } }) { nodes { id url metadata } }

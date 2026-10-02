@@ -27,7 +27,9 @@ export interface FakeState {
     assignee: { id: string; name: string; displayName: string; app?: boolean } | null;
     delegate: { id: string; name: string; displayName: string; app?: boolean } | null;
     stateId: string;
-    project?: { id: string; name: string } | null;
+    project?: { id: string; name: string; status?: { type: string } | null } | null;
+    /** The issue's team; ENG (t-1) when absent. */
+    team?: { id: string; key: string; name: string };
     labels?: string[];
     archivedAt?: string | null;
     trashed?: boolean;
@@ -63,7 +65,17 @@ export interface FakeState {
   }[];
   labels: { id: string; name: string; isGroup: boolean }[];
   cycles: { id: string; number: number; name: string | null; isActive: boolean; isNext: boolean }[];
-  projects: { id: string; name: string }[];
+  projects: { id: string; name: string; status?: string }[];
+  /** Makes the team's open-projects read throw. */
+  projectsFail?: boolean;
+  /** What the main issue's own parent and sub-tickets are in, for a parent with no project. */
+  neighbours: {
+    parent: { identifier: string; project: { id: string } | null } | null;
+    /** A sub-ticket with no state counts as open. */
+    children: { project: { id: string } | null; state?: { type: string } }[];
+  };
+  /** Project ids Linear's semantic search returns for the ticket's text, closest first. */
+  closestProjects: string[];
   milestones: { id: string; name: string; projectId: string }[];
   /** Every issueUpdate input, in order. */
   updates: Record<string, unknown>[];
@@ -151,6 +163,8 @@ export function fakeState(overrides: Partial<FakeState> = {}): FakeState {
       { id: 'cy-8', number: 8, name: null, isActive: false, isNext: true },
     ],
     projects: [{ id: 'p-alpha', name: 'Alpha launch' }],
+    neighbours: { parent: null, children: [] },
+    closestProjects: [],
     milestones: [{ id: 'm-beta', name: 'Beta', projectId: 'p-alpha' }],
     updates: [],
     snapshots: [],
@@ -191,7 +205,7 @@ function issueNode(state: FakeState) {
     archivedAt: issue.archivedAt ?? null,
     trashed: issue.trashed ?? false,
     state: state.states.find((s) => s.id === issue.stateId) ?? null,
-    team: { id: 't-1', key: 'ENG', name: 'Engineering' },
+    team: issue.team ?? { id: 't-1', key: 'ENG', name: 'Engineering' },
     assignee: issue.assignee,
     delegate: issue.delegate,
     creator: null,
@@ -391,6 +405,34 @@ export function fakeGql(state: FakeState): Gql {
         );
         return { cycles: { nodes: nodes.map(({ id, number, name }) => ({ id, number, name })) } };
       }
+      case 'StrictTeamOpenProjects':
+        if (state.projectsFail) throw new Error('projects unavailable');
+        return {
+          projects: page(
+            state.projects.map(({ id, name, status }) => ({
+              id,
+              name,
+              status: { type: status ?? 'started' },
+            })),
+            variables,
+          ),
+        };
+      case 'StrictClosestProjects':
+        return {
+          semanticSearch: { results: state.closestProjects.map((id) => ({ project: { id } })) },
+        };
+      case 'StrictParentNeighbours':
+        return {
+          issue: {
+            parent: state.neighbours.parent,
+            children: {
+              nodes: state.neighbours.children.map((c) => ({
+                state: c.state ?? { type: 'unstarted' },
+                project: c.project,
+              })),
+            },
+          },
+        };
       case 'StrictProjectsByName': {
         const filter = variables['filter'] as Filter;
         const nodes = state.projects.filter((project) =>
@@ -510,9 +552,10 @@ export function fakeGql(state: FakeState): Gql {
         };
         if ('assigneeId' in input) issue.assignee = person(input['assigneeId']);
         if ('delegateId' in input) issue.delegate = person(input['delegateId']);
-        if ('projectId' in input)
-          issue.project =
-            state.projects.find((project) => project.id === input['projectId']) ?? null;
+        if ('projectId' in input) {
+          const found = state.projects.find((project) => project.id === input['projectId']);
+          issue.project = found ? { id: found.id, name: found.name } : null;
+        }
         if (typeof input['title'] === 'string') issue.title = input['title'];
         if (typeof input['stateId'] === 'string') issue.stateId = input['stateId'];
         issue.updatedAt = tick(state);

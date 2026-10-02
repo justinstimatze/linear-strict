@@ -34,6 +34,13 @@ import {
 } from './facts.js';
 import { StrictWorkspace } from './workspace.js';
 import { type UnclaimedFilings, unclaimedFilings } from './filings.js';
+import {
+  closestProjects,
+  likelyProject,
+  projectList,
+  projectOpen,
+  teamOpenProjects,
+} from './home.js';
 import { type Candidate, newBecauseArg, overlapCandidates, overlapRefusal } from './overlap.js';
 import { MODEL_NAMED_MAX, type OverlapReader, TeamTitles, overlapPrompt } from './overlap-model.js';
 import { MARKER_URL, type StoredMarker, markerAttachmentInput } from './marker.js';
@@ -1644,9 +1651,15 @@ export class StrictLinear {
         const byId = new Map(open.map((t) => [t.identifier.toUpperCase(), t]));
         const ticket = `THE NEW TICKET\nTitle: ${title}\n\n${description ?? '(no description)'}`;
         const named = await this.overlapReader(list, changes ? `${changes}\n\n${ticket}` : ticket);
-        const found = [...new Set(named.map((id) => id.trim().toUpperCase()))].flatMap(
-          (id) => byId.get(id) ?? [],
-        );
+        const seen = new Set<string>();
+        const found: Candidate[] = [];
+        for (const { identifier, reason } of named) {
+          const id = identifier.trim().toUpperCase();
+          const ticket = byId.get(id);
+          if (!ticket || seen.has(id)) continue;
+          seen.add(id);
+          found.push({ ...ticket, ...(reason ? { why: reason } : {}) });
+        }
         return { candidates: found.slice(0, MODEL_NAMED_MAX) };
       } catch (error) {
         // The searches below still give the filer something to account for.
@@ -1658,6 +1671,61 @@ export class StrictLinear {
   }
 
   /**
+   * The project a new ticket goes in. One named wins; a sub-ticket otherwise
+   * takes its parent's, as in Linear's own app, when that project is open and
+   * on the same team (a closed project takes no new work, and another team's
+   * may not include this one). Anything else is refused with the team's open
+   * projects listed, and for a parent with no usable project, the one its
+   * neighbours suggest. A team with no open projects is exempt.
+   */
+  private async home(
+    team: { id: string; key: string },
+    parent: IssueCore | undefined,
+    projectId: string | undefined,
+    text: string,
+  ): Promise<{ projectId?: string; inherited?: string; note?: string }> {
+    if (projectId) return { projectId };
+    const theirs = parent?.project;
+    const sameTeam = parent?.team?.id === team.id;
+    if (theirs && projectOpen(theirs.status) && sameTeam)
+      return { projectId: theirs.id, inherited: theirs.name };
+
+    let projects;
+    try {
+      projects = await teamOpenProjects(this.gql, team.key);
+    } catch (error) {
+      throw new Error(
+        `Nothing was filed: a new ticket needs a project, and reading the team's projects failed (${errorMessage(error)}). Retry, or pass project_id (list_projects gives them).`,
+        { cause: error },
+      );
+    }
+    if (projects.length === 0)
+      return { note: 'the team has no open projects, so this was filed without one' };
+    const closest = await closestProjects(this.gql, team.key, text, projects);
+    const choices = `${projectList(projects, closest)}\nIf none fits, ask your user where it belongs.`;
+    if (!parent) {
+      throw new Error(
+        `Nothing was filed: a new ticket needs a home, so it lands in somebody's queue and in a project's reports rather than in the pile. Pass parent (the ticket this work is part of) or project_id. ${choices}`,
+      );
+    }
+    const state = !theirs
+      ? 'has no project'
+      : !sameTeam
+        ? `is on another team, and its project ${theirs.name} may not include ${team.key}`
+        : `is in ${theirs.name}, which is ${theirs.status?.type ?? 'closed'}`;
+    const fix = !sameTeam
+      ? 'Pass project_id for this ticket.'
+      : await likelyProject(this.gql, parent.id, projects).then((likely) =>
+          likely
+            ? `${parent.identifier} probably belongs in ${likely.project.name} (${likely.project.id}), since ${likely.why}: give it that with set_fields project and retry, and this one goes in it too. Or pass project_id for this ticket alone.`
+            : `Give ${parent.identifier} a project with set_fields project and retry, and this one goes in it too. Or pass project_id for this ticket alone.`,
+        );
+    throw new Error(
+      `Nothing was filed: the parent ${parent.identifier} ${state}, so a ticket under it would show in no project's reports. ${fix} ${choices}`,
+    );
+  }
+
+  /**
    * Files a ticket. It needs a home (a parent or a project), and one filed
    * without a parent has to account for the open tickets closest to it: the
    * agents had been splitting one change into several small tickets and
@@ -1666,11 +1734,6 @@ export class StrictLinear {
    */
   async createIssue(args: CreateIssueArgs) {
     if (!args.title.trim()) throw new Error('title is empty');
-    if (!args.parent && !args.project_id) {
-      throw new Error(
-        "Nothing was filed: a new ticket needs a home, so it lands in somebody's queue rather than in the pile. Pass parent (the ticket this work is part of) or project_id (list_projects gives the team's projects). If neither fits, ask your user where it belongs.",
-      );
-    }
     const newBecause = newBecauseArg(args.new_because);
     const teams = await this.gql<{ teams: { nodes: { id: string; key: string }[] } }>(
       TEAM_BY_KEY_QUERY,
@@ -1682,7 +1745,15 @@ export class StrictLinear {
     if (!team) throw new Error(`No team with key "${args.team}". list_teams gives the keys.`);
 
     const description = args.sections?.length ? applySectionPatches('', args.sections) : undefined;
-    const parentId = args.parent ? (await this.core(args.parent)).id : undefined;
+    const parent = args.parent ? await this.core(args.parent) : undefined;
+    const parentId = parent?.id;
+    const home = await this.home(
+      team,
+      parent,
+      args.project_id,
+      `${args.title.trim()}\n\n${description ?? ''}`,
+    );
+    const projectId = home.projectId;
 
     // A sub-ticket has already said what it belongs to; anything else is checked against the open tickets.
     let candidates: Candidate[] = [];
@@ -1706,7 +1777,7 @@ export class StrictLinear {
       teamId: team.id,
       title: args.title.trim(),
       ...(description !== undefined ? { description } : {}),
-      ...(args.project_id ? { projectId: args.project_id } : {}),
+      ...(projectId ? { projectId } : {}),
       ...(parentId ? { parentId } : {}),
     };
     const data = await this.gql<{
@@ -1746,6 +1817,8 @@ export class StrictLinear {
       ...(filedNew ? { filed_new: filedNew } : {}),
       ...(overlapUnchecked ? { overlap_unchecked: overlapUnchecked } : {}),
       ...(overlapNote ? { overlap_note: overlapNote } : {}),
+      ...(home.inherited ? { project: home.inherited } : {}),
+      ...(home.note ? { home_note: home.note } : {}),
       your_unclaimed: yourUnclaimed,
     };
   }

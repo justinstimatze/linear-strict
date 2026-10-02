@@ -41,6 +41,8 @@ export interface Candidate {
   title: string;
   state: string | null;
   url: string;
+  /** The work a model says the two share; absent for a ticket a search found. */
+  why?: string;
 }
 
 interface FoundIssue {
@@ -50,6 +52,7 @@ interface FoundIssue {
   state: { name: string } | null;
 }
 
+// A search names no shared work, so its tickets carry no why; a stock line would only be noise.
 const candidate = (issue: FoundIssue): Candidate => ({
   identifier: issue.identifier,
   title: issue.title,
@@ -99,7 +102,10 @@ export async function overlapCandidates(
 
 function listed(candidates: Candidate[]) {
   return candidates
-    .map((c) => `- ${c.identifier} [${c.state ?? 'no state'}] ${c.title}`)
+    .map(
+      (c) =>
+        `- ${c.identifier} [${c.state ?? 'no state'}] ${c.title}${c.why ? `\n  why: ${c.why}` : ''}`,
+    )
     .join('\n');
 }
 
@@ -132,7 +138,7 @@ export function overlapRefusal(
   if (candidates.length === 0) return null;
   const named = new Set(distinctFrom.map((id) => id.trim().toUpperCase()));
   const missing = candidates.filter((c) => !named.has(c.identifier.toUpperCase()));
-  const options = `For each, decide which it is:
+  const options = `For each, decide which it is (a match on a shared name alone is separate work; say so in new_because):
 - The new work is part of it: file under it, with parent set to it.
 - The new work widens it: file nothing. Widen that ticket instead (set_state adding to its Done when, or a comment), so one ticket carries the whole change.
 - It is separate from every one of them: retry with new_because (one sentence, at most ${String(NEW_BECAUSE_MAX)} characters, on why this can't be part of any of them) and distinct_from listing each identifier above. The reason is posted on the new ticket.`;
