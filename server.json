@@ -8,12 +8,12 @@
     "source": "github"
   },
   "websiteUrl": "https://github.com/justinstimatze/linear-strict#readme",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "linear-strict",
-      "version": "0.1.1",
+      "version": "0.2.0",
       "transport": {
         "type": "stdio"
       },

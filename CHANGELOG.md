@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 — 2026-10-02
 
 - `linear-strict/library` exports `StrictLinear`, `linearGql` and `OverlapRefusal`, so a script that files tickets goes through the same checks as an agent. An overlap refusal carries the close tickets as `candidates`.
 - `create_issue` needs `parent` or `project_id`, and a sub-ticket goes in its parent's project; a parent with no project is refused until it has one, with the project its neighbours suggest. Refusals list the team's open projects, the ones closest to the ticket's text first. A team with no open projects is exempt. Each close ticket in an overlap refusal says why it was named. Without a parent it finds the open tickets on the team the new one overlaps: with a judge key set, `claude-sonnet-5-5` reads every open title and names them; otherwise Linear's semantic and keyword searches find the closest (`LINEAR_STRICT_OVERLAP=search` keeps the searches) and refuses until the filer files under one, widens one instead, or passes `new_because` with each in `distinct_from`; the reason is posted on the new ticket. The result lists the filer's own tickets on the team still waiting with no delegate (`your_unclaimed`). Agents had been splitting one change into several tickets and leaving what they filed for nobody.

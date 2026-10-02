@@ -1,6 +1,6 @@
 {
   "name": "linear-strict",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "mcpName": "io.github.justinstimatze/linear-strict",
   "description": "Unofficial, opinionated Linear MCP server: reads tickets whole, keeps the description as current state, and enforces its rules in the server. Not affiliated with Linear.",
   "type": "module",
