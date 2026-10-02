@@ -552,15 +552,33 @@ export const strictToolDefinitions: MCPToolDefinition[] = [
   {
     name: 'create_issue',
     description:
-      'Create a ticket. Its description is built from named sections (Observed, Cause, Fix, Done when), checked the same way set_state checks them, so the ticket starts in the form every other tool expects. Include a Done when section if the ticket will be closed through set_status.',
+      "Create a ticket. Before filing, ask whether the work is part of a ticket that already exists: widening that ticket, or filing under it with parent, keeps one change in one place. A new ticket needs a home, parent or project_id. Without a parent, the server finds the team's open tickets closest to this one and refuses until you've placed the work: under one of them (parent), into one of them (widen it and file nothing), or apart from all of them (new_because and distinct_from). The result lists what you filed on this team that no agent has taken up; filing a ticket is not doing the work, so see each into a queue. Its description is built from named sections (Observed, Cause, Fix, Done when), checked the same way set_state checks them. Include a Done when section if the ticket will be closed through set_status.",
     input_schema: {
       type: 'object',
       properties: {
         team: { type: 'string', description: 'Team key, e.g. ENG' },
         title: { type: 'string' },
         sections: PATCH_SCHEMA,
-        parent: { type: 'string', description: 'Parent issue identifier or UUID' },
-        project_id: { type: 'string' },
+        parent: {
+          type: 'string',
+          description:
+            'The ticket this work is part of, identifier or UUID. A sub-ticket skips the check for close open tickets.',
+        },
+        project_id: {
+          type: 'string',
+          description: 'The project this ticket belongs to; list_projects gives the ids.',
+        },
+        new_because: {
+          type: 'string',
+          description:
+            'Why this work is separate from every close open ticket the server named, in one sentence of at most 300 characters. Posted on the new ticket.',
+        },
+        distinct_from: {
+          type: 'array',
+          items: { type: 'string' },
+          description:
+            'Each close open ticket the server named, by identifier, that this one is separate from.',
+        },
       },
       required: ['team', 'title'],
     },
@@ -827,6 +845,8 @@ export function strictToolHandlers(
         sections: patches(args, 'sections'),
         parent: opt(args, 'parent'),
         project_id: opt(args, 'project_id'),
+        new_because: opt(args, 'new_because'),
+        distinct_from: strings(args, 'distinct_from'),
       }),
     ),
   };

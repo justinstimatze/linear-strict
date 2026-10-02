@@ -135,6 +135,7 @@ The flow uses PKCE, so a client secret is optional. `auth status` shows whether 
 | `LINEAR_STRICT_HANDS_OFF_LABELS` | `no-agents` | Comma-separated labels that make a ticket people-only: every write through this server is refused, reads still work |
 | `LINEAR_STRICT_SIGN_OFF` | `person` | Who approves dropping an unticked `Done when` item: `person` or `judge` ([Sign-off](#sign-off)) |
 | `LINEAR_STRICT_JUDGE_MODEL` | `claude-opus-5-5` | The model that decides when `LINEAR_STRICT_SIGN_OFF=judge` |
+| `LINEAR_STRICT_OVERLAP` | `model` | How `create_issue` finds the open tickets a new one overlaps: `model` has `claude-sonnet-5-5` read every open title on the team when a judge key is set, else Linear's searches; `search` always uses the searches |
 | `ANTHROPIC_API_KEY` | — | The judge's key, if not saved with `auth judge-key set` |
 | `LINEAR_STRICT_STATE_DIR` | `$XDG_STATE_HOME/linear-strict` | Where claim records and pending sign-offs are kept |
 | `LINEAR_STRICT_CONFIG_DIR` | `$XDG_CONFIG_HOME/linear-strict` | Where `auth login` stores credentials |
@@ -164,7 +165,7 @@ Each ticket this server has reconciled carries one attachment titled "linear-str
 | `comment` | Typed comment: `evidence`, `correction`, `ask`, `answer`, `closed_by` |
 | `set_status` | Move to a workflow state; completed states pass the Done gate |
 | `set_fields` | Priority, owner, labels, cycle, project, milestone, parent, dates, relations and linked PRs; never the description or state |
-| `create_issue` | New ticket with validated sections |
+| `create_issue` | New ticket with validated sections, under a parent or in a project, placed against the closest open tickets |
 | `list_teams` | Teams with their workflow states in board order |
 | `list_cycles` | Cycles, active and next by default; pair a number with `list_issues` |
 | `list_projects`, `list_initiatives` | Open projects and initiatives with status, owner and dates |
@@ -174,6 +175,48 @@ Each ticket this server has reconciled carries one attachment titled "linear-str
 | `whoami` | The user or app behind the token, which is who claims and `_is_me` filters mean |
 
 The server also returns these rules as MCP `instructions` on `initialize`, so an agent learns the workflow when it connects. [`TOOLS.md`](./TOOLS.md) has each tool's arguments, and [`docs/design.md`](./docs/design.md) the reasoning behind the rules, their limits, and what is still open.
+
+## From a script
+
+A program that files tickets, such as a CI job turning test findings into tickets, can go through the same rules without an agent in between:
+
+```js
+import { StrictLinear, OverlapRefusal, linearGql, memoryClaimStore } from 'linear-strict/library';
+
+const strict = new StrictLinear({ gql: linearGql({ token }), claims: memoryClaimStore() });
+try {
+  await strict.createIssue({ team: 'ENG', title, sections, project_id });
+} catch (error) {
+  if (!(error instanceof OverlapRefusal)) throw error;
+  // error.candidates: the closest open tickets. Comment on the one this repeats,
+  // file under one with parent, or retry with new_because and distinct_from.
+}
+```
+
+## Citation audit
+
+Tickets cite code by `path:line` and by commit hash, and nothing checks either once the ticket is written. The audit does, offline, in two steps:
+
+```sh
+linear-strict audit export --team ENG --out eng.jsonl
+linear-strict audit check --export eng.jsonl --repo ~/src/app
+```
+
+`export` writes each ticket's description, every saved version of it, and its comments, open tickets first. That is about three API calls per ticket, spaced one ticket every `--pace` seconds (20 by default, about a fifth of a key's hourly quota), so a long export doesn't crowd out the key's other users. It saves every 25 tickets. A rerun with the same `--out` fetches only tickets updated since, and carries on where `--max-fetch` (500 by default), a rate limit or an interruption stopped the last run.
+
+`check` reads that file and a git checkout and makes no network calls. Each citation is dated by the description version or comment it first appears in, then compared with the cited branch (`--ref`, default `origin/main`; a repo that lands work on a branch such as `develop` before main passes that) as it was on that date and as it is now:
+
+| Verdict | Meaning |
+|---|---|
+| `holds` | The cited lines read the same today |
+| `moved` | The same lines are elsewhere in the file now; the finding gives the new line |
+| `changed` | The cited lines say something else now; the finding gives both |
+| `file_gone` | The file is no longer on the branch |
+| `trivial_line` | The cited line is a brace or blank, so it can't anchor anything |
+| `line_missing_when_cited`, `not_in_tree_when_cited` | The branch didn't have that line or file on the day it was cited, so it was cited from somewhere else |
+| `ambiguous_path` | More than one file ends with the cited path |
+
+A commit-shaped hex string is `on_main`, `off_main` (`--main`, default `origin/main`), or `not_a_commit_here`, which is often a different kind of id: a comment, a request, a deployment. `--json` prints every finding; `--issue` narrows to named tickets.
 
 ## Development
 

@@ -186,7 +186,7 @@ describe('principalNotifications', () => {
     const { gql: ownGql } = fakeGql(() => ({ issues: page([], null) }));
     const { gql: principalGql, calls: principalCalls } = fakeGql((op) =>
       op === 'StrictViewer'
-        ? { viewer: { id: 'u-principal', name: 'Justin', displayName: 'Justin', app: false } }
+        ? { viewer: { id: 'u-principal', name: 'Ada', displayName: 'Ada', app: false } }
         : { notificationsUnreadCount: 1, notifications: page([note(1, false)], null) },
     );
     const strict = new StrictLinear({
@@ -204,7 +204,7 @@ describe('principalNotifications', () => {
   it('refuses when the principal token resolves to a different user than LINEAR_PRINCIPAL_ID', async () => {
     const { gql: ownGql } = fakeGql(() => ({ issues: page([], null) }));
     const { gql: principalGql } = fakeGql(() => ({
-      viewer: { id: 'u-someone-else', name: 'Not Justin', displayName: 'Not Justin', app: false },
+      viewer: { id: 'u-someone-else', name: 'Not Ada', displayName: 'Not Ada', app: false },
     }));
     const strict = new StrictLinear({
       gql: ownGql,
@@ -221,7 +221,7 @@ describe('principalNotifications', () => {
     const { gql: ownGql } = fakeGql(() => ({ issues: page([], null) }));
     const { gql: principalGql, calls: principalCalls } = fakeGql((op) =>
       op === 'StrictViewer'
-        ? { viewer: { id: 'u-principal', name: 'Justin', displayName: 'Justin', app: false } }
+        ? { viewer: { id: 'u-principal', name: 'Ada', displayName: 'Ada', app: false } }
         : { notificationsUnreadCount: 0, notifications: page([], null) },
     );
     const strict = new StrictLinear({

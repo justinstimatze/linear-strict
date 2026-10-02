@@ -7,6 +7,9 @@
 // LIVE_HUMAN_ID is only used with an agent (app) token: the issue is assigned to
 // that person so the claim has to take the delegate path.
 //
+// The issue goes in LIVE_PROJECT_ID, or else the team's first open project,
+// and the two it files for the duplicate step go under it.
+//
 // LIVE_PR_URL, a merged GitHub PR in a repository the workspace's GitHub
 // integration sees, adds a link_prs step. Linear's bot may comment on that PR
 // when it is linked, so pick one where a comment from a test issue is fine.
@@ -43,15 +46,35 @@ try {
   assert.deepEqual(await strictToolHandlers(strict).whoami({}), viewer, 'whoami must return the viewer');
 
   step('create_issue');
-  created = await strict.createIssue({
+  const projectId =
+    process.env.LIVE_PROJECT_ID ?? (await strict.workspace.listProjects({ team })).projects[0]?.id;
+  if (!projectId) throw new Error(`Team ${team} has no open project; set LIVE_PROJECT_ID`);
+  const filing = {
     team,
+    project_id: projectId,
     title: `[strict-mcp live test ${new Date().toISOString()}] ignore, auto-deleted`,
     sections: [
       { section: 'Observed', mode: 'replace', body: '- 2026-09-24 · scripts/live-test.mjs · created by the live test' },
       { section: 'Done when', mode: 'replace', body: '- [ ] the live test deletes this issue' },
     ],
-  });
-  console.log(created.identifier, created.url);
+  };
+  await assert.rejects(strict.createIssue({ ...filing, project_id: undefined }), /needs a home/);
+  try {
+    created = await strict.createIssue(filing);
+  } catch (error) {
+    // The team's closest open tickets, which the filing has to account for.
+    if (error?.name !== 'OverlapRefusal') throw error;
+    const close = error.candidates.map((c) => c.identifier);
+    console.log('overlap check named', close.join(', '));
+    created = await strict.createIssue({
+      ...filing,
+      new_because: 'A throwaway ticket the linear-strict live test files and deletes.',
+      distinct_from: close,
+    });
+    assert.ok(created.filed_new?.comment_url, `the reason is posted: ${JSON.stringify(created.filed_new)}`);
+  }
+  assert.ok(created.your_unclaimed, 'create_issue returns the unclaimed filings');
+  console.log(created.identifier, created.url, 'unclaimed:', JSON.stringify(created.your_unclaimed).slice(0, 300));
   const id = created.identifier;
 
   if (viewer.app && process.env.LIVE_HUMAN_ID) await outOfBand(id, { assigneeId: process.env.LIVE_HUMAN_ID });
@@ -149,9 +172,10 @@ try {
   read = await strict.getIssue(id);
 
   step('closed_by sets a duplicate relation');
-  other = await strict.createIssue({ team, title: `[strict-mcp live test canonical ${new Date().toISOString()}] ignore, auto-deleted` });
+  other = await strict.createIssue({ team, parent: created.identifier, title: `[strict-mcp live test canonical ${new Date().toISOString()}] ignore, auto-deleted` });
   const dupe = await strict.createIssue({
     team,
+    parent: created.identifier,
     title: `[strict-mcp live test duplicate ${new Date().toISOString()}] ignore, auto-deleted`,
     sections: [{ section: 'Done when', mode: 'replace', body: '- [ ] deleted by the live test' }],
   });

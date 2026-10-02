@@ -71,6 +71,26 @@ export interface FakeState {
   otherComments: { issueId: string; body: string }[];
   /** Description snapshots, oldest first; the fake serves them newest first. null: the ticket has no document. */
   snapshots: { at: string; actorIds: string[]; doc: PmNode }[] | null;
+  /** What semanticSearch returns for any query, most relevant first; 'fail' makes it throw. */
+  closeTickets: { identifier: string; title: string; state: string }[] | 'fail';
+  /** What searchIssues returns for any term; 'fail' makes it throw. */
+  keywordTickets: { identifier: string; title: string; state: string }[] | 'fail';
+  /** The team's tickets as the title list reads them; stateType 'completed' and the like are closed. */
+  teamTickets: {
+    identifier: string;
+    title: string;
+    state: string;
+    stateType: string;
+    updatedAt: string;
+    /** When it was filed; updatedAt when absent. */
+    createdAt?: string;
+    /** When it was completed or canceled, for a closed one. */
+    closedAt?: string;
+  }[];
+  /** The viewer's own filings still waiting with no delegate, as Linear would return them. */
+  unclaimed: { identifier: string; title: string; createdAt: string; state: string }[];
+  /** Every issueCreate input, in order. */
+  created: Record<string, unknown>[];
   /** Seconds past the fake epoch; each write advances it, per state so runs are repeatable. */
   clock: number;
 }
@@ -134,6 +154,11 @@ export function fakeState(overrides: Partial<FakeState> = {}): FakeState {
     milestones: [{ id: 'm-beta', name: 'Beta', projectId: 'p-alpha' }],
     updates: [],
     snapshots: [],
+    closeTickets: [],
+    keywordTickets: [],
+    teamTickets: [],
+    unclaimed: [],
+    created: [],
     clock: 0,
     ...overrides,
   };
@@ -533,6 +558,100 @@ export function fakeGql(state: FakeState): Gql {
           },
         };
       }
+      case 'StrictTeamByKey':
+        return {
+          teams: {
+            nodes: nameMatches(variables['key'], 'ENG')
+              ? [{ id: 't-1', key: 'ENG', name: 'Engineering' }]
+              : [],
+          },
+        };
+      case 'StrictOverlap': {
+        if (state.closeTickets === 'fail') throw new Error('Rate limit exceeded');
+        return {
+          semanticSearch: {
+            results: state.closeTickets.slice(0, Number(variables['max'])).map((t) => ({
+              issue: {
+                identifier: t.identifier,
+                title: t.title,
+                url: `https://linear.app/x/issue/${t.identifier}`,
+                state: { name: t.state },
+              },
+            })),
+          },
+        };
+      }
+      case 'StrictOverlapKeyword': {
+        if (state.keywordTickets === 'fail') throw new Error('Search unavailable');
+        return {
+          searchIssues: {
+            nodes: state.keywordTickets.slice(0, Number(variables['first'])).map((t) => ({
+              identifier: t.identifier,
+              title: t.title,
+              url: `https://linear.app/x/issue/${t.identifier}`,
+              state: { name: t.state },
+            })),
+          },
+        };
+      }
+      case 'StrictTeamTitles':
+      case 'StrictTeamTitlesSince': {
+        const since = typeof variables['since'] === 'string' ? variables['since'] : '';
+        const closed = ['completed', 'canceled', 'duplicate'];
+        const wanted = state.teamTickets.filter((t) =>
+          operation === 'StrictTeamTitles' ? !closed.includes(t.stateType) : t.updatedAt > since,
+        );
+        return {
+          issues: page(
+            [...wanted].reverse().map((t) => ({
+              identifier: t.identifier,
+              title: t.title,
+              url: `https://linear.app/x/issue/${t.identifier}`,
+              createdAt: t.createdAt ?? t.updatedAt,
+              updatedAt: t.updatedAt,
+              state: { name: t.state, type: t.stateType },
+            })),
+            variables,
+          ),
+        };
+      }
+      case 'StrictTeamTitlesClosedSince': {
+        const at = variables['at'] as string;
+        const wanted = state.teamTickets.filter(
+          (t) => (t.createdAt ?? t.updatedAt) < at && t.closedAt !== undefined && t.closedAt >= at,
+        );
+        return {
+          issues: page(
+            wanted.map((t) => ({ identifier: t.identifier, title: t.title })),
+            variables,
+          ),
+        };
+      }
+      case 'StrictIssueCreate': {
+        const input = variables['input'] as Record<string, unknown>;
+        state.created.push(input);
+        const n = 100 + state.created.length;
+        return {
+          issueCreate: {
+            success: true,
+            issue: {
+              id: `new-${String(n)}`,
+              identifier: `ENG-${String(n)}`,
+              url: `https://linear.app/x/issue/ENG-${String(n)}`,
+              title: input['title'],
+            },
+          },
+        };
+      }
+      case 'StrictUnclaimedFilings':
+        return {
+          issues: page(
+            [...state.unclaimed]
+              .reverse()
+              .map((t) => ({ ...t, updatedAt: t.createdAt, state: { name: t.state } })),
+            variables,
+          ),
+        };
       case 'StrictTeamStates':
         return { issue: { team: { states: { nodes: state.states } } } };
       default:

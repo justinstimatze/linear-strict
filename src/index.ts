@@ -2,6 +2,7 @@
 
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import pkg from '../package.json' with { type: 'json' };
+import { runAuditCli } from './audit-cli.js';
 import { runAuthCli } from './auth/cli.js';
 import { createRefreshingProvider } from './auth/refreshing-provider.js';
 import { resolveLinearAuth } from './auth/resolve.js';
@@ -16,6 +17,7 @@ import { askPost, askPre } from './hook.js';
 import { runInstallCli, signOffHookHealth } from './install.js';
 import { DEFAULT_JUDGE_MODEL, judgeSignOff } from './judge.js';
 import { resolveJudgeKey } from './judge-key.js';
+import { type OverlapReader, overlapReader } from './overlap-model.js';
 import { type Elicitor, elicitSignOff, previewSignOff } from './sign-off.js';
 import { defaultStateDir, fileSignOffStore } from './sign-off-store.js';
 import { guardInstance } from './single-instance.js';
@@ -39,6 +41,19 @@ async function main(): Promise<void> {
   // each time the primary token refreshes.
   const principalConfig = getPrincipalConfig();
   const principalGql = principalConfig ? linearGql({ token: principalConfig.token }) : undefined;
+  // The overlap check reads every open title with a model when a judge key is configured.
+  // A key that can't be read leaves it on Linear's searches rather than stopping the server.
+  let readOverlap: OverlapReader | undefined;
+  if (process.env['LINEAR_STRICT_OVERLAP'] !== 'search') {
+    try {
+      const found = resolveJudgeKey();
+      if (found) readOverlap = overlapReader({ apiKey: found.key });
+    } catch (error) {
+      process.stderr.write(
+        `linear-strict: create_issue's overlap check uses Linear's searches: ${error instanceof Error ? error.message : String(error)}\n`,
+      );
+    }
+  }
   // One StrictLinear per access token, so its viewer lookup is cached until a
   // refresh rotates the token.
   const handlers = createRefreshingProvider({
@@ -55,6 +70,7 @@ async function main(): Promise<void> {
             .map((label) => label.trim())
             .filter(Boolean),
           signOff,
+          overlapReader: readOverlap,
           principal:
             principalConfig && principalGql
               ? { gql: principalGql, userId: principalConfig.userId }
@@ -191,6 +207,14 @@ if (args[0] === 'install') {
   }
 } else if (args[0] === 'hook') {
   process.exit(runHook(args[1]));
+} else if (args[0] === 'audit') {
+  runAuditCli(args.slice(1)).then(
+    (code) => process.exit(code),
+    (error: unknown) => {
+      logError('Audit failed', error);
+      process.exit(1);
+    },
+  );
 } else if (args[0] === 'auth') {
   runAuthCli(args.slice(1)).then(
     (code) => process.exit(code),

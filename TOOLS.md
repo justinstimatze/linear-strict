@@ -209,13 +209,19 @@ Changing a person's assignment needs `take_over: true`. A ticket assigned to ano
 
 Creates a ticket whose description is built from validated sections.
 
+A ticket needs a home: `parent` or `project_id`. Without a parent, the server finds the team's open tickets the new one overlaps, and refuses while any of them is unaccounted for. With a judge key set (`linear-strict auth judge-key set`, or `ANTHROPIC_API_KEY`), a model reads every open ticket's title on the team, with the new ticket's title and description, and names them, up to eight. Without a key, or when that call fails (`overlap_note` says so), Linear's searches find them: five by meaning (`semanticSearch`) and up to three more by keyword (`searchIssues` on the title). The refusal lists them and the three ways forward: file under one with `parent`, widen one instead and file nothing, or retry with `new_because` and every one of them in `distinct_from`. The reason is posted on the new ticket as a "filed new" comment, and the result's `filed_new` links it. If one search fails the other's tickets still count; if both fail, the ticket is filed and `overlap_unchecked` says why.
+
+The result also has `your_unclaimed`: the tickets this identity filed on the team that are still in Triage, Todo or Backlog with no delegate. It gives `total` (counted to 200), `older_than_7_days`, and the ten oldest as rows of identifier, title, state and age in days.
+
 | Argument | Required | |
 |---|---|---|
 | `team` | yes | Team key |
 | `title` | yes | |
 | `sections` | | Object keyed by section name |
-| `parent` | | Parent issue |
-| `project_id` | | |
+| `parent` | one of these | The ticket this work is part of; skips the search |
+| `project_id` | one of these | |
+| `new_because` | | Why the work is none of the close tickets, at most 300 characters |
+| `distinct_from` | with `new_because` | Each close ticket's identifier |
 
 ### `whoami`
 

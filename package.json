@@ -5,6 +5,11 @@
   "description": "Unofficial, opinionated Linear MCP server: reads tickets whole, keeps the description as current state, and enforces its rules in the server. Not affiliated with Linear.",
   "type": "module",
   "main": "dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./library": "./dist/library.js",
+    "./package.json": "./package.json"
+  },
   "bin": {
     "linear-strict": "dist/index.js"
   },

@@ -33,6 +33,9 @@ import {
   shippedStateFindings,
 } from './facts.js';
 import { StrictWorkspace } from './workspace.js';
+import { type UnclaimedFilings, unclaimedFilings } from './filings.js';
+import { type Candidate, newBecauseArg, overlapCandidates, overlapRefusal } from './overlap.js';
+import { MODEL_NAMED_MAX, type OverlapReader, TeamTitles, overlapPrompt } from './overlap-model.js';
 import { MARKER_URL, type StoredMarker, markerAttachmentInput } from './marker.js';
 import {
   ATTACHMENTS_QUERY,
@@ -150,6 +153,10 @@ export interface CreateIssueArgs {
   sections?: SectionPatch[] | undefined;
   parent?: string | undefined;
   project_id?: string | undefined;
+  /** Why this is none of the close open tickets the overlap check returned. */
+  new_because?: string | undefined;
+  /** Each close open ticket the new one is separate from. */
+  distinct_from?: string[] | undefined;
 }
 
 export interface StrictLinearOptions {
@@ -173,6 +180,12 @@ export interface StrictLinearOptions {
    * Absent for most identities — only get_principal_notifications reads it.
    */
   principal?: { gql: Gql; userId: string } | undefined;
+  /**
+   * A model that reads every open ticket's title and names the ones a new
+   * ticket overlaps. Without it, create_issue finds them with Linear's
+   * searches, which miss more.
+   */
+  overlapReader?: OverlapReader | undefined;
 }
 
 export interface SignOffRequest {
@@ -241,6 +254,8 @@ export class StrictLinear {
   private readonly principal: { gql: Gql; userId: string } | undefined;
   private readonly principalWorkspace: StrictWorkspace | undefined;
   private principalViewerCache: Viewer | null = null;
+  private readonly overlapReader: OverlapReader | undefined;
+  private readonly titles: TeamTitles;
 
   constructor(options: StrictLinearOptions) {
     this.gql = options.gql;
@@ -252,6 +267,8 @@ export class StrictLinear {
     this.signOff = options.signOff;
     this.workspace = new StrictWorkspace(this.gql, this.now);
     this.principal = options.principal;
+    this.overlapReader = options.overlapReader;
+    this.titles = new TeamTitles(this.gql);
     this.principalWorkspace = options.principal
       ? new StrictWorkspace(options.principal.gql, this.now)
       : undefined;
@@ -1606,7 +1623,55 @@ export class StrictLinear {
     }
   }
 
+  /**
+   * The open tickets closest to a new one: named by the model reading every
+   * open title when there is one, else (or when that call fails) found by
+   * Linear's searches.
+   */
+  private async closeOpenTickets(
+    team: string,
+    title: string,
+    description: string | undefined,
+  ): Promise<{ candidates: Candidate[]; note?: string }> {
+    let note: string | undefined;
+    if (this.overlapReader) {
+      try {
+        const { open, list, changes } = await overlapPrompt(
+          this.titles,
+          team,
+          this.now().getTime(),
+        );
+        const byId = new Map(open.map((t) => [t.identifier.toUpperCase(), t]));
+        const ticket = `THE NEW TICKET\nTitle: ${title}\n\n${description ?? '(no description)'}`;
+        const named = await this.overlapReader(list, changes ? `${changes}\n\n${ticket}` : ticket);
+        const found = [...new Set(named.map((id) => id.trim().toUpperCase()))].flatMap(
+          (id) => byId.get(id) ?? [],
+        );
+        return { candidates: found.slice(0, MODEL_NAMED_MAX) };
+      } catch (error) {
+        // The searches below still give the filer something to account for.
+        note = `the model reading the open tickets failed (${errorMessage(error)}), so Linear's searches found these instead`;
+      }
+    }
+    const candidates = await overlapCandidates(this.gql, team, title, description);
+    return note ? { candidates, note } : { candidates };
+  }
+
+  /**
+   * Files a ticket. It needs a home (a parent or a project), and one filed
+   * without a parent has to account for the open tickets closest to it: the
+   * agents had been splitting one change into several small tickets and
+   * filing them as if filing were the fix. The result lists the filer's own
+   * tickets still waiting for anyone to take them up.
+   */
   async createIssue(args: CreateIssueArgs) {
+    if (!args.title.trim()) throw new Error('title is empty');
+    if (!args.parent && !args.project_id) {
+      throw new Error(
+        "Nothing was filed: a new ticket needs a home, so it lands in somebody's queue rather than in the pile. Pass parent (the ticket this work is part of) or project_id (list_projects gives the team's projects). If neither fits, ask your user where it belongs.",
+      );
+    }
+    const newBecause = newBecauseArg(args.new_because);
     const teams = await this.gql<{ teams: { nodes: { id: string; key: string }[] } }>(
       TEAM_BY_KEY_QUERY,
       {
@@ -1615,17 +1680,35 @@ export class StrictLinear {
     );
     const team = teams.teams.nodes[0];
     if (!team) throw new Error(`No team with key "${args.team}". list_teams gives the keys.`);
-    if (!args.title.trim()) throw new Error('title is empty');
 
     const description = args.sections?.length ? applySectionPatches('', args.sections) : undefined;
+    const parentId = args.parent ? (await this.core(args.parent)).id : undefined;
+
+    // A sub-ticket has already said what it belongs to; anything else is checked against the open tickets.
+    let candidates: Candidate[] = [];
+    let overlapUnchecked: string | undefined;
+    let overlapNote: string | undefined;
+    if (!parentId) {
+      try {
+        ({ candidates, note: overlapNote } = await this.closeOpenTickets(
+          team.key,
+          args.title.trim(),
+          description,
+        ));
+      } catch (error) {
+        overlapUnchecked = `the search for close open tickets failed (${errorMessage(error)}), so this was filed without that check`;
+      }
+      const refusal = overlapRefusal(candidates, newBecause, args.distinct_from ?? []);
+      if (refusal) throw refusal;
+    }
+
     const input = {
       teamId: team.id,
       title: args.title.trim(),
       ...(description !== undefined ? { description } : {}),
       ...(args.project_id ? { projectId: args.project_id } : {}),
-      ...(args.parent ? { parentId: (await this.core(args.parent)).id } : {}),
+      ...(parentId ? { parentId } : {}),
     };
-
     const data = await this.gql<{
       issueCreate: {
         success: boolean;
@@ -1633,7 +1716,38 @@ export class StrictLinear {
       };
     }>(ISSUE_CREATE, { input });
     if (!data.issueCreate.success) throw new Error('Linear reported issueCreate as unsuccessful');
-    return data.issueCreate.issue;
+    const created = data.issueCreate.issue;
+
+    let filedNew: { comment_url: string } | { comment_failed: string } | undefined;
+    if (candidates.length > 0 && newBecause !== undefined) {
+      const viewer = await this.viewer();
+      const label = viewer.app ? nameOf(viewer) : `agent via ${nameOf(viewer)}`;
+      try {
+        const comment = await this.postComment(
+          created.id,
+          `🤖 ${label} · ${this.today()} · filed new\n\nNot part of ${candidates.map((c) => c.identifier).join(', ')}: ${newBecause}`,
+        );
+        filedNew = { comment_url: comment.url };
+      } catch (error) {
+        filedNew = {
+          comment_failed: `${errorMessage(error)}. Post the reason with comment kind note.`,
+        };
+      }
+    }
+
+    let yourUnclaimed: UnclaimedFilings | { error: string };
+    try {
+      yourUnclaimed = await unclaimedFilings(this.gql, team.key, this.now());
+    } catch (error) {
+      yourUnclaimed = { error: `not fetched: ${errorMessage(error)}` };
+    }
+    return {
+      ...created,
+      ...(filedNew ? { filed_new: filedNew } : {}),
+      ...(overlapUnchecked ? { overlap_unchecked: overlapUnchecked } : {}),
+      ...(overlapNote ? { overlap_note: overlapNote } : {}),
+      your_unclaimed: yourUnclaimed,
+    };
   }
 }
 
