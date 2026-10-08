@@ -24,6 +24,7 @@ import {
   nextQuestionId,
   stripMarker,
   readSection,
+  withoutGeneratedBlocks,
 } from './sections.js';
 import {
   type AttachmentNode,
@@ -248,11 +249,17 @@ export interface SignOffAnswer {
 }
 
 /**
- * A short content hash of a description, as Linear stored it. get_issue
- * returns it, every description write returns the new one, and a write
- * passes the one it was built from as base.
+ * A short content hash of a description, as Linear stored it, leaving out
+ * generated blocks (withoutGeneratedBlocks). get_issue returns it, every
+ * description write returns the new one, and a write passes the one it was
+ * built from as base.
  */
 export function descriptionSha(text: string) {
+  return createHash('sha256').update(withoutGeneratedBlocks(text)).digest('hex').substring(0, 12);
+}
+
+/** The hash markers stored before descriptionSha left generated blocks out. */
+function wholeDescriptionSha(text: string) {
   return createHash('sha256').update(text).digest('hex').substring(0, 12);
 }
 
@@ -643,7 +650,8 @@ export class StrictLinear {
     const changedElsewhere =
       found?.in === 'attachment' &&
       marker?.sha !== undefined &&
-      marker.sha !== descriptionSha(description);
+      marker.sha !== descriptionSha(description) &&
+      marker.sha !== wholeDescriptionSha(description);
     const lastEdit =
       history
         .filter((entry) => entry.updatedDescription)
@@ -732,7 +740,8 @@ export class StrictLinear {
   }
 
   private claimStatus(claim: ClaimRecord, currentDescription: string) {
-    const changed = claim.description !== currentDescription;
+    const changed =
+      withoutGeneratedBlocks(claim.description) !== withoutGeneratedBlocks(currentDescription);
     return {
       claimed_at: claim.claimedAt,
       edited_since_claim: changed,
@@ -1054,7 +1063,7 @@ export class StrictLinear {
     const claim = this.claims.get(issue.id, viewer.id);
     let unseenChange: string | null = null;
     if (claim) {
-      if (claim.description === before) {
+      if (withoutGeneratedBlocks(claim.description) === withoutGeneratedBlocks(before)) {
         this.claims.put({ ...claim, description: written, updatedAt: updated.updatedAt });
       } else {
         unseenChange = lineDiff(claim.description, before);
