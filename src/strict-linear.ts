@@ -41,7 +41,13 @@ import {
   projectOpen,
   teamOpenProjects,
 } from './home.js';
-import { type Candidate, newBecauseArg, overlapCandidates, overlapRefusal } from './overlap.js';
+import {
+  type Candidate,
+  newBecauseArg,
+  OverlapRefusal,
+  overlapCandidates,
+  overlapRefusal,
+} from './overlap.js';
 import { MODEL_NAMED_MAX, type OverlapReader, TeamTitles, overlapPrompt } from './overlap-model.js';
 import { MARKER_URL, type StoredMarker, markerAttachmentInput } from './marker.js';
 import {
@@ -1833,8 +1839,21 @@ export class StrictLinear {
    */
   async createIssue(args: CreateIssueArgs) {
     if (!args.title.trim()) throw new Error('title is empty');
-    const newBecause = newBecauseArg(args.new_because);
-    const noticedBy = noticedByArg(args.noticed_by);
+    // Every refusal below is collected and reported in one error, so a filing that is missing three
+    // things takes one retry, not three. Only an unknown team stops the checks early.
+    const problems: string[] = [];
+    const collect = <T>(f: () => T): T | undefined => {
+      try {
+        return f();
+      } catch (error) {
+        problems.push(errorMessage(error));
+        return undefined;
+      }
+    };
+    const newBecause = collect(() => newBecauseArg(args.new_because));
+    const noticedBy = collect(() => noticedByArg(args.noticed_by));
+    // Argument checks need no call, so they refuse before the first one.
+    if (problems.length > 0) refuseAll(problems);
     const teams = await this.gql<{ teams: { nodes: { id: string; key: string }[] } }>(
       TEAM_BY_KEY_QUERY,
       {
@@ -1859,24 +1878,33 @@ export class StrictLinear {
           noticedBy,
         });
       }
-      const refused = routeRefusal(routing, team.key, noticedBy, routeVerdict);
-      if (refused) throw new Error(refused);
+      // A noticed_by already refused for its length is reported once, above, not again as missing.
+      const refused =
+        args.noticed_by !== undefined && noticedBy === undefined
+          ? undefined
+          : routeRefusal(routing, team.key, noticedBy, routeVerdict);
+      if (refused) problems.push(refused);
     }
 
     const parent = args.parent ? await this.core(args.parent) : undefined;
     const parentId = parent?.id;
-    const home = await this.home(
-      team,
-      parent,
-      args.project_id,
-      `${args.title.trim()}\n\n${description ?? ''}`,
-    );
-    const projectId = home.projectId;
+    let home: Awaited<ReturnType<typeof this.home>> | undefined;
+    try {
+      home = await this.home(
+        team,
+        parent,
+        args.project_id,
+        `${args.title.trim()}\n\n${description ?? ''}`,
+      );
+    } catch (error) {
+      problems.push(errorMessage(error));
+    }
 
     // A sub-ticket has already said what it belongs to; anything else is checked against the open tickets.
     let candidates: Candidate[] = [];
     let overlapUnchecked: string | undefined;
     let overlapNote: string | undefined;
+    let overlap: OverlapRefusal | undefined;
     if (!parentId) {
       try {
         ({ candidates, note: overlapNote } = await this.closeOpenTickets(
@@ -1887,9 +1915,11 @@ export class StrictLinear {
       } catch (error) {
         overlapUnchecked = `the search for close open tickets failed (${errorMessage(error)}), so this was filed without that check`;
       }
-      const refusal = overlapRefusal(candidates, newBecause, args.distinct_from ?? []);
-      if (refusal) throw refusal;
+      overlap = overlapRefusal(candidates, newBecause, args.distinct_from ?? []) ?? undefined;
     }
+    if (problems.length > 0 || overlap) refuseAll(problems, overlap);
+    if (!home) throw new Error('unreachable: no home and no refusal');
+    const projectId = home.projectId;
 
     const input = {
       teamId: team.id,
@@ -1963,6 +1993,22 @@ export class StrictLinear {
       your_unclaimed: yourUnclaimed,
     };
   }
+}
+
+/**
+ * One error for every refusal a create_issue call collected. A lone refusal is thrown as it is; several
+ * are numbered under one "Nothing was filed". The overlap candidates stay on the error as data.
+ */
+function refuseAll(problems: string[], overlap?: OverlapRefusal): never {
+  if (problems.length === 0 && overlap) throw overlap;
+  if (problems.length === 1 && !overlap) throw new Error(problems[0]);
+  const all = [...problems, ...(overlap ? [overlap.message] : [])];
+  const message = `Nothing was filed. ${String(all.length)} things to fix before the retry:\n\n${all
+    .map((m, i) => `${String(i + 1)}. ${m.replace(/^Nothing was filed:?\s*/, '')}`)
+    .join('\n\n')}`;
+  throw overlap
+    ? new OverlapRefusal(message, overlap.candidates, overlap.missing)
+    : new Error(message);
 }
 
 /**
