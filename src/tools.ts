@@ -612,6 +612,11 @@ export const strictToolDefinitions: MCPToolDefinition[] = [
           description:
             'Each close open ticket the server named, by identifier, that this one is separate from.',
         },
+        noticed_by: {
+          type: 'string',
+          description:
+            "Required of an agent filing onto a product team, when the server routes agents' own work to a team of its own: one sentence of at most 300 characters on who notices this once it is done and what changes for them. A reviewer model reads it against the ticket, and the filing is refused, pointing at the agents' team, when it reads as the agents' own work (CI, tests, gates, hooks, agent tooling, ticket bookkeeping). Posted on the new ticket.",
+        },
       },
       required: ['team', 'title'],
     },
@@ -895,6 +900,7 @@ export function strictToolHandlers(
         project_id: opt(args, 'project_id'),
         new_because: opt(args, 'new_because'),
         distinct_from: strings(args, 'distinct_from'),
+        noticed_by: opt(args, 'noticed_by'),
       }),
     ),
   };
