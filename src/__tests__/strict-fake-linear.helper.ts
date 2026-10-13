@@ -33,6 +33,8 @@ export interface FakeState {
     labels?: string[];
     archivedAt?: string | null;
     trashed?: boolean;
+    /** The ticket this one is a sub-ticket of; read it back through `others`. */
+    parent?: { id: string; identifier: string; title: string } | null;
   };
   comments: FakeComment[];
   descriptionEdits: { createdAt: string; actorName: string }[];
@@ -209,7 +211,7 @@ function issueNode(state: FakeState) {
     assignee: issue.assignee,
     delegate: issue.delegate,
     creator: null,
-    parent: null,
+    parent: issue.parent ?? null,
     project: issue.project ?? null,
     labels: {
       nodes: (issue.labels ?? []).map((name) => ({ id: `l-${name}`, name })),

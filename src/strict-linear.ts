@@ -574,6 +574,8 @@ export class StrictLinear {
       (a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
     );
 
+    const parentPlan = await this.parentPlan(issue, omitted);
+
     const claim = this.claims.get(issue.id, viewer.id);
     const description = issue.description ?? '';
     const drift = this.drift(findMarker(issue), description, sortedComments, history.nodes);
@@ -592,6 +594,7 @@ export class StrictLinear {
         delegate: personOut(issue.delegate),
         creator: personOut(issue.creator),
         parent: issue.parent,
+        ...(parentPlan ? { parent_plan: parentPlan } : {}),
         project: issue.project,
         labels: issue.labels.nodes.map((label) => label.name),
         createdAt: issue.createdAt,
@@ -624,6 +627,34 @@ export class StrictLinear {
       drift,
       omitted,
     };
+  }
+
+  /**
+   * The plan a sub-ticket sits under: the parent's Fix and Done when, whole, so a
+   * reader sees the design already agreed before designing its own. A section the
+   * parent lacks is null. No parent gives undefined; a parent that could not be
+   * read is reported in `omitted` instead.
+   */
+  private async parentPlan(issue: IssueCore, omitted: Omission[]) {
+    if (!issue.parent) return undefined;
+    try {
+      const parent = await this.core(issue.parent.id);
+      const text = parent.description ?? '';
+      return {
+        identifier: parent.identifier,
+        title: parent.title,
+        state: parent.state?.name ?? null,
+        fix: readSection(text, 'Fix'),
+        done_when: readSection(text, 'Done when'),
+      };
+    } catch (error) {
+      omitted.push({
+        field: 'parent_plan',
+        reason: `not fetched: ${errorMessage(error)}`,
+        fetched: 0,
+      });
+      return undefined;
+    }
   }
 
   /**

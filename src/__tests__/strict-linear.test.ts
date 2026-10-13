@@ -27,6 +27,47 @@ function setup(overrides: Partial<FakeState> = {}, signOff?: StrictLinearOptions
 }
 
 describe('get_issue', () => {
+  const parentRef = { id: 'p-1', identifier: 'ENG-9', title: 'Parent epic' };
+  const parentOther = (description: string) => ({ ...parentRef, description });
+
+  it('carries the parent plan, Fix and Done when verbatim, on a sub-ticket', async () => {
+    const fix = 'Use a lease table.\n\n- step one\n- step two\n' + 'x'.repeat(3000);
+    const doneWhen = '- [ ] e2e passes: `pnpm e2e`\n- [ ] flag on';
+    const { state, strict } = setup();
+    state.issue.parent = parentRef;
+    state.others.push(
+      parentOther(`## Observed\nsomething\n\n## Fix\n${fix}\n\n## Done when\n${doneWhen}\n`),
+    );
+
+    const result = await strict.getIssue('ENG-1');
+
+    expect(result.issue.parent).toEqual(parentRef);
+    expect(result.issue.parent_plan).toEqual({
+      identifier: 'ENG-9',
+      title: 'Parent epic',
+      state: state.states[0]?.name ?? null,
+      fix,
+      done_when: doneWhen,
+    });
+  });
+
+  it('adds no parent_plan when the ticket has no parent', async () => {
+    const { strict } = setup();
+    const result = await strict.getIssue('ENG-1');
+    expect(result.issue).not.toHaveProperty('parent_plan');
+  });
+
+  it('gives fix: null, not an empty string, when the parent has no Fix section', async () => {
+    const { state, strict } = setup();
+    state.issue.parent = parentRef;
+    state.others.push(parentOther('## Done when\n- [ ] it works\n'));
+
+    const result = await strict.getIssue('ENG-1');
+
+    expect(result.issue.parent_plan?.fix).toBeNull();
+    expect(result.issue.parent_plan?.done_when).toBe('- [ ] it works');
+  });
+
   it('returns every comment across pages, oldest first, with nothing omitted', async () => {
     const { state, strict } = setup();
     addComments(state, 230);
