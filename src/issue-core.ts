@@ -20,6 +20,8 @@ export interface IssueCore {
   title: string;
   description: string | null;
   url: string;
+  /** Linear's suggested git branch name; cutting a branch with it links the PR to the ticket. */
+  branchName?: string | null;
   priority: number;
   createdAt: string;
   updatedAt: string;

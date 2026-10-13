@@ -17,6 +17,7 @@ import { askPost, askPre } from './hook.js';
 import { runInstallCli, signOffHookHealth } from './install.js';
 import { DEFAULT_JUDGE_MODEL, judgeSignOff } from './judge.js';
 import { resolveJudgeKey } from './judge-key.js';
+import { DEFAULT_ROUTE_MODEL, routeJudge, teamRoutingFromEnv, type RouteJudge } from './route.js';
 import { type OverlapReader, overlapReader } from './overlap-model.js';
 import { type Elicitor, elicitSignOff, previewSignOff } from './sign-off.js';
 import { defaultStateDir, fileSignOffStore } from './sign-off-store.js';
@@ -54,6 +55,22 @@ async function main(): Promise<void> {
       );
     }
   }
+  // Agents' own work goes on its own team when LINEAR_STRICT_FLEET_TEAM and
+  // LINEAR_STRICT_PRODUCT_TEAMS are set; the judge key, when present, reads each claim.
+  let routeReader: RouteJudge | undefined;
+  try {
+    const found = resolveJudgeKey();
+    if (found)
+      routeReader = routeJudge({
+        apiKey: found.key,
+        model: process.env['LINEAR_STRICT_ROUTE_MODEL'] || DEFAULT_ROUTE_MODEL,
+      });
+  } catch (error) {
+    process.stderr.write(
+      `linear-strict: team routing requires noticed_by but no model reads it: ${error instanceof Error ? error.message : String(error)}\n`,
+    );
+  }
+  const teamRouting = teamRoutingFromEnv(process.env, routeReader);
   // One StrictLinear per access token, so its viewer lookup is cached until a
   // refresh rotates the token.
   const handlers = createRefreshingProvider({
@@ -71,6 +88,7 @@ async function main(): Promise<void> {
             .filter(Boolean),
           signOff,
           overlapReader: readOverlap,
+          teamRouting,
           principal:
             principalConfig && principalGql
               ? { gql: principalGql, userId: principalConfig.userId }

@@ -33,6 +33,8 @@ export interface FakeState {
     labels?: string[];
     archivedAt?: string | null;
     trashed?: boolean;
+    /** The ticket this one is a sub-ticket of; read it back through `others`. */
+    parent?: { id: string; identifier: string; title: string } | null;
   };
   comments: FakeComment[];
   descriptionEdits: { createdAt: string; actorName: string }[];
@@ -199,6 +201,7 @@ function issueNode(state: FakeState) {
     title: issue.title,
     description: issue.description,
     url: `https://linear.app/x/issue/${issue.identifier}`,
+    branchName: `jupiter/${issue.identifier.toLowerCase()}-a-ticket`,
     priority: 0,
     createdAt: '2026-08-01T00:00:00.000Z',
     updatedAt: issue.updatedAt,
@@ -209,7 +212,7 @@ function issueNode(state: FakeState) {
     assignee: issue.assignee,
     delegate: issue.delegate,
     creator: null,
-    parent: null,
+    parent: issue.parent ?? null,
     project: issue.project ?? null,
     labels: {
       nodes: (issue.labels ?? []).map((name) => ({ id: `l-${name}`, name })),
