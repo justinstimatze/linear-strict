@@ -174,7 +174,7 @@ export const strictToolDefinitions: MCPToolDefinition[] = [
   {
     name: 'list_issues',
     description:
-      'Every ticket matching the filters, in one call: the server pages through Linear to the end, so the answer is the whole set (total, by_state, and one row per ticket under columns). Rows hold identifier, title, state, assignee, delegate and updatedAt; there are no description excerpts, so read a ticket with get_issue before acting on it. More than 2000 matches is refused; narrow with open, state, cycle, project, assignee_is_me or delegate_is_me. When a task covers a set, work every row.',
+      'Every ticket matching the filters, in one call: the server pages through Linear to the end, so the answer is the whole set (total, by_state, and one row per ticket under columns). Rows hold identifier, title, state, assignee, delegate and updatedAt; there are no description excerpts, so read a ticket with get_issue before acting on it. More than 2000 matches is refused; narrow with open, state, cycle, project, label, assignee_is_me or delegate_is_me. When a task covers a set, work every row.',
     input_schema: {
       type: 'object',
       properties: {
@@ -193,6 +193,7 @@ export const strictToolDefinitions: MCPToolDefinition[] = [
         },
         project: { type: 'string', description: 'Project name or id' },
         open: { type: 'boolean', description: 'Only tickets not in a completed or canceled state' },
+        label: { type: 'string', description: 'Label name, e.g. "planet-ready"' },
       },
     },
     output_schema: LIST_ISSUES_OUTPUT,
@@ -792,6 +793,7 @@ export function strictToolHandlers(
         cycle: int(args, 'cycle'),
         project: opt(args, 'project'),
         open: bool(args, 'open'),
+        label: opt(args, 'label'),
       }),
     ),
     whoami: withArgs(() => strict.viewer()),

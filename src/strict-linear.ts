@@ -587,6 +587,7 @@ export class StrictLinear {
         identifier: issue.identifier,
         title: issue.title,
         url: issue.url,
+        gitBranchName: issue.branchName ?? null,
         state: issue.state,
         team: issue.team,
         priority: issue.priority,

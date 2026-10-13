@@ -51,6 +51,12 @@ describe('get_issue', () => {
     });
   });
 
+  it('returns gitBranchName, the branch that links a PR to the ticket', async () => {
+    const { strict } = setup();
+    const result = await strict.getIssue('ENG-1');
+    expect(result.issue.gitBranchName).toBe('jupiter/eng-1-a-ticket');
+  });
+
   it('adds no parent_plan when the ticket has no parent', async () => {
     const { strict } = setup();
     const result = await strict.getIssue('ENG-1');

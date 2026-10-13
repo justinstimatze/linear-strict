@@ -10,7 +10,7 @@ export const MARKER_DELETE = `mutation StrictMarkerDelete($id: String!) { attach
 export const PAGE_INFO = 'pageInfo { hasNextPage endCursor }';
 
 const ISSUE_CORE = `
-  id identifier title description url priority createdAt updatedAt archivedAt trashed
+  id identifier title description url branchName priority createdAt updatedAt archivedAt trashed
   state { id name type }
   team { id key name }
   assignee { id name displayName app }

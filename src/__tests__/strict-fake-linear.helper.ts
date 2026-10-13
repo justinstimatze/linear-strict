@@ -201,6 +201,7 @@ function issueNode(state: FakeState) {
     title: issue.title,
     description: issue.description,
     url: `https://linear.app/x/issue/${issue.identifier}`,
+    branchName: `jupiter/${issue.identifier.toLowerCase()}-a-ticket`,
     priority: 0,
     createdAt: '2026-08-01T00:00:00.000Z',
     updatedAt: issue.updatedAt,
