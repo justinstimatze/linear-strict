@@ -826,9 +826,9 @@ export class StrictLinear {
     const names = new Map<string, string>();
     if (actorIds.length > 0) {
       const users = await this.gql<{
-        users: { nodes: { id: string; name: string; displayName: string }[] };
+        users: { nodes: { id: string; name: string; displayName: string; app?: boolean | null }[] };
       }>(USERS_BY_ID_QUERY, { ids: actorIds });
-      for (const user of users.users.nodes) names.set(user.id, user.displayName || user.name);
+      for (const user of users.users.nodes) names.set(user.id, nameOf(user));
     }
 
     // A snapshot whose text matches the one before it changed only formatting or attribution; it is not a version.
@@ -1021,7 +1021,7 @@ export class StrictLinear {
       issueId: issue.id,
       identifier: issue.identifier,
       claimedAt: this.now().toISOString(),
-      claimedBy: { id: viewer.id, name: viewer.displayName || viewer.name },
+      claimedBy: { id: viewer.id, name: nameOf(viewer) },
       updatedAt: updated.updatedAt,
       description: updated.description ?? '',
     };
@@ -1256,7 +1256,7 @@ export class StrictLinear {
     const moved: StoredMarker = {
       through: through.id,
       at: through.createdAt,
-      by: viewer.displayName || viewer.name,
+      by: nameOf(viewer),
       checked: this.now().toISOString(),
     };
     const later = ordered.length - index - 1;

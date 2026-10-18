@@ -123,7 +123,9 @@ export function checkAccounting(
       quiet.push({
         comment: comment.id,
         author: comment.user
-          ? comment.user.displayName || comment.user.name
+          ? comment.user.app
+            ? comment.user.name
+            : comment.user.displayName || comment.user.name
           : (comment.botActor?.name ?? comment.externalUser?.name ?? null),
         author_kind: author.kind,
         reason: entry.reason ?? '',
