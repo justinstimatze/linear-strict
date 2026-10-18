@@ -1,5 +1,5 @@
 /**
- * Reading the Done when checklist: which unticked items a write drops or
+ * Reading the Done when checklist: which items a write drops or
  * rewords, what it adds in their place, and which ticks it leaves uncited.
  */
 import { readSection, uncitedTicks } from './sections.js';
@@ -15,9 +15,18 @@ export function doneWhenItems(description: string, pattern: RegExp): string[] {
     .filter((item): item is string => item !== undefined);
 }
 
+/** Where a ticked item's citation starts: "<item> · <evidence>". */
+const CITATION = ' · ';
+
+/** Marks a dropped item that had already been ticked, in the refusal, the sign-off and the descope comment. */
+export const WAS_TICKED = ' (already ticked)';
+
 /**
- * Unticked Done when items in before whose text is gone from after, ticked or not. An item kept
+ * Done when items in before whose text is gone from after, ticked or not. An item kept
  * word for word with a citation added after it, such as "(run 123)", is still the same check.
+ * A ticked item is compared without its " · " citation, so unticking it with its text intact,
+ * or changing only the citation, keeps it; rewording what a passed check promised drops it,
+ * and it is returned marked as already ticked.
  */
 export function droppedChecks(before: string, after: string): string[] {
   const kept = doneWhenItems(after, CHECK_ITEM);
@@ -26,7 +35,12 @@ export function droppedChecks(before: string, after: string): string[] {
       (line) =>
         line === item || (line.startsWith(item) && /^[\s,;:.(—-]/.test(line.slice(item.length))),
     );
-  return doneWhenItems(before, UNTICKED).filter((item) => !survives(item));
+  const unticked = doneWhenItems(before, UNTICKED).filter((item) => !survives(item));
+  const ticked = doneWhenItems(before, TICKED_ITEM)
+    .map((item) => item.split(CITATION)[0]?.trim() ?? item)
+    .filter((item) => !survives(item))
+    .map((item) => `${item}${WAS_TICKED}`);
+  return [...unticked, ...ticked];
 }
 
 /**

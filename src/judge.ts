@@ -7,6 +7,8 @@ const JUDGE_SYSTEM = `You review one proposed change to a ticket's "Done when" c
 
 An unticked Done when item is a check that has not passed yet. The agent proposing the change is usually the one that would otherwise have to pass that check, so it has a reason to make the check easier or to drop it.
 
+An item marked "(already ticked)" was ticked as passed. Rewording it changes what the ticket says was proven, so approve only when the new wording names what was actually checked and still tests the behavior the ticket is about; a weaker check kept ticked is the case to decline.
+
 Approve when the ticket's description supports the agent's reason: the check cannot run or no longer means anything as written (for example, what it tests was removed, moved to another ticket, or cannot be reached in the environment it names), and any replacement still tests the behavior the ticket is about. Moving a check to a place where it can actually run, testing the same behavior, is a fair change.
 
 Decline when:

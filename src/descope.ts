@@ -1,20 +1,24 @@
 /**
- * The rules for dropping an unticked Done when item: what a descope must say
+ * The rules for dropping or rewording a Done when item: what a descope must say
  * before anyone is asked, and what the agent is told when sign-off is not given.
  */
-import { DESCOPE_LINE, REWORDING } from './done-when.js';
+import { DESCOPE_LINE, REWORDING, WAS_TICKED } from './done-when.js';
 import type { SignOffAnswer } from './strict-linear.js';
 
 function checklist(dropped: string[]) {
-  return dropped.map((item) => `- [ ] ${item}`).join('\n');
+  return dropped
+    .map((item) =>
+      item.endsWith(WAS_TICKED) ? `- [x] ${item.slice(0, -WAS_TICKED.length)}` : `- [ ] ${item}`,
+    )
+    .join('\n');
 }
 
 /** A patch that drops nothing must not carry the arguments for dropping something. */
 export function checkNothingDropped(reason: string | undefined, token: string | undefined) {
   if (reason)
-    throw new Error('descope_reason was given, but this patch drops no unticked Done when item.');
+    throw new Error('descope_reason was given, but this patch drops or rewords no Done when item.');
   if (token)
-    throw new Error('sign_off was given, but this patch drops no unticked Done when item.');
+    throw new Error('sign_off was given, but this patch drops or rewords no Done when item.');
 }
 
 /**
@@ -30,17 +34,17 @@ export function checkDescopeArgs(
   const list = checklist(dropped);
   if (via !== 'set_state') {
     throw new Error(
-      `This patch drops unticked Done when items:\n${list}\n\nDrop or reword them with set_state and a descope_reason instead, so the person at the client can approve it.\n\n${REWORDING}`,
+      `This patch drops or rewords Done when items:\n${list}\n\nDrop or reword them with set_state and a descope_reason instead, so the person at the client can approve it.\n\n${REWORDING}`,
     );
   }
   if (!reason?.trim()) {
     throw new Error(
-      `This patch drops unticked Done when items:\n${list}\n\nRemoving or rewording a check that has not passed needs a reason and a yes from your user. Retry with descope_reason saying why it no longer applies; they will be asked to approve it.\n\n${REWORDING}`,
+      `This patch drops or rewords Done when items:\n${list}\n\nRemoving or rewording a check, passed or not, needs a reason and a yes from your user. Retry with descope_reason saying why it no longer applies; they will be asked to approve it.\n\n${REWORDING}`,
     );
   }
   if (!risk?.trim()) {
     throw new Error(
-      `This patch drops unticked Done when items:\n${list}\n\nYour user decides this from what you tell them, so descope_risk is needed too: what stops being checked if they approve, and what could get through because of it, in a sentence they can weigh without the ticket open. Retry with it.`,
+      `This patch drops or rewords Done when items:\n${list}\n\nYour user decides this from what you tell them, so descope_risk is needed too: what stops being checked if they approve, and what could get through because of it, in a sentence they can weigh without the ticket open. Retry with it.`,
     );
   }
   const long = [

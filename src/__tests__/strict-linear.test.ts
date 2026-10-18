@@ -449,7 +449,7 @@ describe('dropping an unticked Done when item', () => {
     await expect(
       strict.setState('ENG-1', [{ section: 'Done when', mode: 'replace', body: ONE_CHECK }]),
     ).rejects.toThrow(
-      /drops unticked Done when items:\n- \[ \] a Portuguese question[\s\S]*descope_reason/,
+      /drops or rewords Done when items:\n- \[ \] a Portuguese question[\s\S]*descope_reason/,
     );
     expect(state.issue.description).toBe(before);
   });
@@ -491,6 +491,54 @@ describe('dropping an unticked Done when item', () => {
     );
     const read = await strict.getIssue('ENG-1');
     expect(read.drift.unreconciled_comments).toEqual([]);
+  });
+
+  it('counts rewording a ticked item as dropping it, and names it as already ticked', async () => {
+    const asked: SignOffRequest[] = [];
+    const { state, strict } = withTwoChecks((request) => {
+      asked.push(request);
+      return Promise.resolve('approved');
+    });
+    const before = state.issue.description;
+    const weaker = TWO_CHECKS.replace('`npm test` passes', '`npm run lint` passes');
+    await expect(
+      strict.setState('ENG-1', [{ section: 'Done when', mode: 'replace', body: weaker }]),
+    ).rejects.toThrow(
+      /drops or rewords Done when items:\n- \[x\] `npm test` passes[\s\S]*descope_reason/,
+    );
+    expect(state.issue.description).toBe(before);
+    await strict.setState('ENG-1', [{ section: 'Done when', mode: 'replace', body: weaker }], {
+      descope_reason: 'lint is what ran',
+      descope_risk: 'the unit suite is no longer claimed',
+    });
+    expect(asked[0]?.dropped).toEqual(['`npm test` passes (already ticked)']);
+    expect(state.comments.at(-1)?.body).toMatch(
+      /· descope\n[\s\S]*- `npm test` passes \(already ticked\)/,
+    );
+  });
+
+  it('lets a ticked item be unticked with its text kept, or its citation changed, without sign-off', async () => {
+    const { state, strict } = withTwoChecks(() =>
+      Promise.reject(new Error('no sign-off expected')),
+    );
+    state.issue.description = state.issue.description.replace(
+      '`npm test` passes',
+      '`npm test` passes · run 123',
+    );
+    await expect(
+      strict.setState('ENG-1', [
+        {
+          section: 'Done when',
+          mode: 'replace',
+          body: TWO_CHECKS.replace('- [x] `npm test` passes', '- [x] `npm test` passes · run 456'),
+        },
+      ]),
+    ).resolves.toMatchObject({ identifier: 'ENG-1' });
+    await expect(
+      strict.setState('ENG-1', [
+        { section: 'Done when', mode: 'replace', body: TWO_CHECKS.replace('- [x]', '- [ ]') },
+      ]),
+    ).resolves.toMatchObject({ identifier: 'ENG-1' });
   });
 
   it('counts rewording as dropping, and ticking as not', async () => {
@@ -604,7 +652,9 @@ describe('dropping an unticked Done when item', () => {
           body: `${ONE_CHECK}\n- [x] a Portuguese question gets an answer on the live site`,
         },
       ]),
-    ).rejects.toThrow(/drops unticked[\s\S]*keep its text as it is and add the citation after it/);
+    ).rejects.toThrow(
+      /drops or rewords Done when items[\s\S]*keep its text as it is and add the citation after it/,
+    );
   });
 
   it('sends the change to a person in Linear when the client cannot ask', async () => {
@@ -690,7 +740,7 @@ describe('dropping an unticked Done when item', () => {
       strict.setState('ENG-1', [{ section: 'Cause', mode: 'replace', body: 'unknown' }], {
         descope_reason: 'why not',
       }),
-    ).rejects.toThrow(/drops no unticked Done when item/);
+    ).rejects.toThrow(/drops or rewords no Done when item/);
     await expect(
       strict.comment('ENG-1', {
         kind: 'correction',
@@ -863,7 +913,11 @@ describe('claim and the Done gate', () => {
       metadata: { number: 12, status: 'open', draft: false },
     });
     await strict.setState('ENG-1', [
-      { section: 'Done when', mode: 'replace', body: '- [x] shipped · PR #12' },
+      {
+        section: 'Done when',
+        mode: 'replace',
+        body: '- [x] `npm test` passes · `npm test` → 142 passed\n- [x] shipped · PR #12',
+      },
     ]);
     await strict.claim('ENG-1');
     await expect(strict.setStatus('ENG-1', 'Done')).rejects.toThrow(
@@ -884,7 +938,11 @@ describe('claim and the Done gate', () => {
       metadata: { number: 13 },
     });
     await strict.setState('ENG-1', [
-      { section: 'Done when', mode: 'replace', body: '- [x] shipped · PR #13' },
+      {
+        section: 'Done when',
+        mode: 'replace',
+        body: '- [x] `npm test` passes · `npm test` → 142 passed\n- [x] shipped · PR #13',
+      },
     ]);
     await strict.claim('ENG-1');
     const done = await strict.setStatus('ENG-1', 'Done');
