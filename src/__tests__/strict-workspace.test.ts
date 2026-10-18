@@ -326,8 +326,8 @@ describe('markPrincipalNotificationsRead', () => {
   });
 });
 
-describe('list_issues cycle and project filters', () => {
-  it('filters by cycle within a team and by project name or id', async () => {
+describe('list_issues cycle, project and label filters', () => {
+  it('filters by cycle within a team, by project name or id, and by label name', async () => {
     const { gql, calls } = fakeGql(() => ({ issues: page([], null) }));
     const strict = new StrictLinear({ gql, claims: memoryClaimStore() });
 
@@ -341,6 +341,11 @@ describe('list_issues cycle and project filters', () => {
     const id = '0f2c7a52-1d3e-4b8a-9c11-5e6f7a8b9c0d';
     await strict.listIssues({ project: id });
     expect(calls.at(-1)?.variables['filter']).toEqual({ project: { id: { eq: id } } });
+    await strict.listIssues({ label: 'planet-ready', open: true });
+    expect(calls.at(-1)?.variables['filter']).toEqual({
+      state: { type: { nin: ['completed', 'canceled'] } },
+      labels: { some: { name: { eqIgnoreCase: 'planet-ready' } } },
+    });
     await strict.listIssues({ team: 'ENG', state: 'Todo', open: true });
     expect(calls.at(-1)?.variables['filter']).toEqual({
       team: { key: { eqIgnoreCase: 'ENG' } },

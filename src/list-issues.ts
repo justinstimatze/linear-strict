@@ -25,6 +25,8 @@ export interface ListIssuesArgs {
   project?: string | undefined;
   /** Only tickets not in a completed or canceled state. */
   open?: boolean | undefined;
+  /** Label name; matches a ticket carrying it among its labels. */
+  label?: string | undefined;
 }
 
 /** Past this many matches list_issues refuses rather than return part of the set. */
@@ -51,6 +53,7 @@ export function listFilter(args: ListIssuesArgs) {
             : { name: { eqIgnoreCase: args.project } },
         }
       : {}),
+    ...(args.label ? { labels: { some: { name: { eqIgnoreCase: args.label } } } } : {}),
   };
 }
 

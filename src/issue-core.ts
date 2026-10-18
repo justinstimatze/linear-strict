@@ -20,6 +20,8 @@ export interface IssueCore {
   title: string;
   description: string | null;
   url: string;
+  /** Linear's suggested git branch name; cutting a branch with it links the PR to the ticket. */
+  branchName?: string | null;
   priority: number;
   createdAt: string;
   updatedAt: string;
@@ -42,14 +44,18 @@ export function authorName(comment: {
   botActor: { name: string } | null;
   externalUser: { name: string } | null;
 }) {
-  if (comment.user) return comment.user.displayName || comment.user.name;
+  if (comment.user) return nameOf(comment.user);
   if (comment.botActor) return `${comment.botActor.name} (bot)`;
   if (comment.externalUser) return `${comment.externalUser.name} (external)`;
   return null;
 }
 
+/**
+ * An agent's handle drops the `@` Linear forbids there (`mayorjustin`), so an app
+ * identity is named by its full name (`mayor@justin`); a person keeps their handle.
+ */
 export function nameOf(person: Person) {
-  return person.displayName || person.name;
+  return person.app ? person.name : person.displayName || person.name;
 }
 
 export function personOut(person: Person | null) {

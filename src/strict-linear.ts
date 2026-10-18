@@ -24,6 +24,7 @@ import {
   nextQuestionId,
   stripMarker,
   readSection,
+  withoutGeneratedBlocks,
 } from './sections.js';
 import {
   type AttachmentNode,
@@ -41,7 +42,13 @@ import {
   projectOpen,
   teamOpenProjects,
 } from './home.js';
-import { type Candidate, newBecauseArg, overlapCandidates, overlapRefusal } from './overlap.js';
+import {
+  type Candidate,
+  newBecauseArg,
+  OverlapRefusal,
+  overlapCandidates,
+  overlapRefusal,
+} from './overlap.js';
 import { MODEL_NAMED_MAX, type OverlapReader, TeamTitles, overlapPrompt } from './overlap-model.js';
 import { MARKER_URL, type StoredMarker, markerAttachmentInput } from './marker.js';
 import {
@@ -121,6 +128,7 @@ import {
   releasesOut,
 } from './issue-read.js';
 import { checkDescopeArgs, checkNothingDropped, signOffRefusal } from './descope.js';
+import { noticedByArg, routeRefusal, type RouteVerdict, type TeamRouting } from './route.js';
 
 /**
  * PR statuses in Linear's GitHub attachment metadata that mean not merged.
@@ -164,6 +172,8 @@ export interface CreateIssueArgs {
   new_because?: string | undefined;
   /** Each close open ticket the new one is separate from. */
   distinct_from?: string[] | undefined;
+  /** On a product team, who notices this once it's done and what changes for them. */
+  noticed_by?: string | undefined;
 }
 
 export interface StrictLinearOptions {
@@ -193,6 +203,12 @@ export interface StrictLinearOptions {
    * searches, which miss more.
    */
   overlapReader?: OverlapReader | undefined;
+  /**
+   * Keeps an agent's own work off the product teams: an agent filing onto
+   * one has to say what a person using the product will notice. Off when
+   * absent.
+   */
+  teamRouting?: TeamRouting | undefined;
 }
 
 export interface SignOffRequest {
@@ -233,11 +249,17 @@ export interface SignOffAnswer {
 }
 
 /**
- * A short content hash of a description, as Linear stored it. get_issue
- * returns it, every description write returns the new one, and a write
- * passes the one it was built from as base.
+ * A short content hash of a description, as Linear stored it, leaving out
+ * generated blocks (withoutGeneratedBlocks). get_issue returns it, every
+ * description write returns the new one, and a write passes the one it was
+ * built from as base.
  */
 export function descriptionSha(text: string) {
+  return createHash('sha256').update(withoutGeneratedBlocks(text)).digest('hex').substring(0, 12);
+}
+
+/** The hash markers stored before descriptionSha left generated blocks out. */
+function wholeDescriptionSha(text: string) {
   return createHash('sha256').update(text).digest('hex').substring(0, 12);
 }
 
@@ -272,6 +294,7 @@ export class StrictLinear {
     { actorKind: string; createdAt: string; read: boolean }
   >();
   private readonly overlapReader: OverlapReader | undefined;
+  private readonly teamRouting: TeamRouting | undefined;
   private readonly titles: TeamTitles;
 
   constructor(options: StrictLinearOptions) {
@@ -285,6 +308,7 @@ export class StrictLinear {
     this.workspace = new StrictWorkspace(this.gql, this.now);
     this.principal = options.principal;
     this.overlapReader = options.overlapReader;
+    this.teamRouting = options.teamRouting;
     this.titles = new TeamTitles(this.gql);
     this.principalWorkspace = options.principal
       ? new StrictWorkspace(options.principal.gql, this.now)
@@ -550,6 +574,8 @@ export class StrictLinear {
       (a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
     );
 
+    const parentPlan = await this.parentPlan(issue, omitted);
+
     const claim = this.claims.get(issue.id, viewer.id);
     const description = issue.description ?? '';
     const drift = this.drift(findMarker(issue), description, sortedComments, history.nodes);
@@ -561,6 +587,7 @@ export class StrictLinear {
         identifier: issue.identifier,
         title: issue.title,
         url: issue.url,
+        gitBranchName: issue.branchName ?? null,
         state: issue.state,
         team: issue.team,
         priority: issue.priority,
@@ -568,6 +595,7 @@ export class StrictLinear {
         delegate: personOut(issue.delegate),
         creator: personOut(issue.creator),
         parent: issue.parent,
+        ...(parentPlan ? { parent_plan: parentPlan } : {}),
         project: issue.project,
         labels: issue.labels.nodes.map((label) => label.name),
         createdAt: issue.createdAt,
@@ -603,6 +631,34 @@ export class StrictLinear {
   }
 
   /**
+   * The plan a sub-ticket sits under: the parent's Fix and Done when, whole, so a
+   * reader sees the design already agreed before designing its own. A section the
+   * parent lacks is null. No parent gives undefined; a parent that could not be
+   * read is reported in `omitted` instead.
+   */
+  private async parentPlan(issue: IssueCore, omitted: Omission[]) {
+    if (!issue.parent) return undefined;
+    try {
+      const parent = await this.core(issue.parent.id);
+      const text = parent.description ?? '';
+      return {
+        identifier: parent.identifier,
+        title: parent.title,
+        state: parent.state?.name ?? null,
+        fix: readSection(text, 'Fix'),
+        done_when: readSection(text, 'Done when'),
+      };
+    } catch (error) {
+      omitted.push({
+        field: 'parent_plan',
+        reason: `not fetched: ${errorMessage(error)}`,
+        fetched: 0,
+      });
+      return undefined;
+    }
+  }
+
+  /**
    * Where the description may lag the thread. With a reconciled marker, every
    * comment after the marked one is unreconciled. Without one, the fallback
    * is every comment posted after the last description edit, and the absence
@@ -626,7 +682,8 @@ export class StrictLinear {
     const changedElsewhere =
       found?.in === 'attachment' &&
       marker?.sha !== undefined &&
-      marker.sha !== descriptionSha(description);
+      marker.sha !== descriptionSha(description) &&
+      marker.sha !== wholeDescriptionSha(description);
     const lastEdit =
       history
         .filter((entry) => entry.updatedDescription)
@@ -715,7 +772,8 @@ export class StrictLinear {
   }
 
   private claimStatus(claim: ClaimRecord, currentDescription: string) {
-    const changed = claim.description !== currentDescription;
+    const changed =
+      withoutGeneratedBlocks(claim.description) !== withoutGeneratedBlocks(currentDescription);
     return {
       claimed_at: claim.claimedAt,
       edited_since_claim: changed,
@@ -768,9 +826,9 @@ export class StrictLinear {
     const names = new Map<string, string>();
     if (actorIds.length > 0) {
       const users = await this.gql<{
-        users: { nodes: { id: string; name: string; displayName: string }[] };
+        users: { nodes: { id: string; name: string; displayName: string; app?: boolean | null }[] };
       }>(USERS_BY_ID_QUERY, { ids: actorIds });
-      for (const user of users.users.nodes) names.set(user.id, user.displayName || user.name);
+      for (const user of users.users.nodes) names.set(user.id, nameOf(user));
     }
 
     // A snapshot whose text matches the one before it changed only formatting or attribution; it is not a version.
@@ -963,7 +1021,7 @@ export class StrictLinear {
       issueId: issue.id,
       identifier: issue.identifier,
       claimedAt: this.now().toISOString(),
-      claimedBy: { id: viewer.id, name: viewer.displayName || viewer.name },
+      claimedBy: { id: viewer.id, name: nameOf(viewer) },
       updatedAt: updated.updatedAt,
       description: updated.description ?? '',
     };
@@ -1037,7 +1095,7 @@ export class StrictLinear {
     const claim = this.claims.get(issue.id, viewer.id);
     let unseenChange: string | null = null;
     if (claim) {
-      if (claim.description === before) {
+      if (withoutGeneratedBlocks(claim.description) === withoutGeneratedBlocks(before)) {
         this.claims.put({ ...claim, description: written, updatedAt: updated.updatedAt });
       } else {
         unseenChange = lineDiff(claim.description, before);
@@ -1198,7 +1256,7 @@ export class StrictLinear {
     const moved: StoredMarker = {
       through: through.id,
       at: through.createdAt,
-      by: viewer.displayName || viewer.name,
+      by: nameOf(viewer),
       checked: this.now().toISOString(),
     };
     const later = ordered.length - index - 1;
@@ -1822,7 +1880,21 @@ export class StrictLinear {
    */
   async createIssue(args: CreateIssueArgs) {
     if (!args.title.trim()) throw new Error('title is empty');
-    const newBecause = newBecauseArg(args.new_because);
+    // Every refusal below is collected and reported in one error, so a filing that is missing three
+    // things takes one retry, not three. Only an unknown team stops the checks early.
+    const problems: string[] = [];
+    const collect = <T>(f: () => T): T | undefined => {
+      try {
+        return f();
+      } catch (error) {
+        problems.push(errorMessage(error));
+        return undefined;
+      }
+    };
+    const newBecause = collect(() => newBecauseArg(args.new_because));
+    const noticedBy = collect(() => noticedByArg(args.noticed_by));
+    // Argument checks need no call, so they refuse before the first one.
+    if (problems.length > 0) refuseAll(problems);
     const teams = await this.gql<{ teams: { nodes: { id: string; key: string }[] } }>(
       TEAM_BY_KEY_QUERY,
       {
@@ -1833,20 +1905,47 @@ export class StrictLinear {
     if (!team) throw new Error(`No team with key "${args.team}". list_teams gives the keys.`);
 
     const description = args.sections?.length ? applySectionPatches('', args.sections) : undefined;
+
+    // An agent's own work goes on the fleet team; a product team holds what a person would notice.
+    let routeVerdict: RouteVerdict | undefined;
+    const routing = this.teamRouting;
+    if (routing?.productTeams.includes(team.key.toUpperCase()) && (await this.viewer()).app) {
+      if (noticedBy !== undefined && routing.judge) {
+        routeVerdict = await routing.judge({
+          team: team.key,
+          fleetTeam: routing.fleetTeam,
+          title: args.title.trim(),
+          description: description ?? '',
+          noticedBy,
+        });
+      }
+      // A noticed_by already refused for its length is reported once, above, not again as missing.
+      const refused =
+        args.noticed_by !== undefined && noticedBy === undefined
+          ? undefined
+          : routeRefusal(routing, team.key, noticedBy, routeVerdict);
+      if (refused) problems.push(refused);
+    }
+
     const parent = args.parent ? await this.core(args.parent) : undefined;
     const parentId = parent?.id;
-    const home = await this.home(
-      team,
-      parent,
-      args.project_id,
-      `${args.title.trim()}\n\n${description ?? ''}`,
-    );
-    const projectId = home.projectId;
+    let home: Awaited<ReturnType<typeof this.home>> | undefined;
+    try {
+      home = await this.home(
+        team,
+        parent,
+        args.project_id,
+        `${args.title.trim()}\n\n${description ?? ''}`,
+      );
+    } catch (error) {
+      problems.push(errorMessage(error));
+    }
 
     // A sub-ticket has already said what it belongs to; anything else is checked against the open tickets.
     let candidates: Candidate[] = [];
     let overlapUnchecked: string | undefined;
     let overlapNote: string | undefined;
+    let overlap: OverlapRefusal | undefined;
     if (!parentId) {
       try {
         ({ candidates, note: overlapNote } = await this.closeOpenTickets(
@@ -1857,9 +1956,11 @@ export class StrictLinear {
       } catch (error) {
         overlapUnchecked = `the search for close open tickets failed (${errorMessage(error)}), so this was filed without that check`;
       }
-      const refusal = overlapRefusal(candidates, newBecause, args.distinct_from ?? []);
-      if (refusal) throw refusal;
+      overlap = overlapRefusal(candidates, newBecause, args.distinct_from ?? []) ?? undefined;
     }
+    if (problems.length > 0 || overlap) refuseAll(problems, overlap);
+    if (!home) throw new Error('unreachable: no home and no refusal');
+    const projectId = home.projectId;
 
     const input = {
       teamId: team.id,
@@ -1894,6 +1995,27 @@ export class StrictLinear {
       }
     }
 
+    let routed: { comment_url: string } | { comment_failed: string } | undefined;
+    if (noticedBy !== undefined && routeVerdict !== undefined) {
+      const viewer = await this.viewer();
+      const label = viewer.app ? nameOf(viewer) : `agent via ${nameOf(viewer)}`;
+      const read =
+        routeVerdict.route === 'unknown'
+          ? `Routing not reviewed (${routeVerdict.model}: ${routeVerdict.error}); the pull-request path check still applies.`
+          : `Reviewed by ${routeVerdict.model}: ${routeVerdict.reason}`;
+      try {
+        const comment = await this.postComment(
+          created.id,
+          `🤖 ${label} · ${this.today()} · filed on ${team.key}\n\nWho notices: ${noticedBy}\n\n${read}`,
+        );
+        routed = { comment_url: comment.url };
+      } catch (error) {
+        routed = {
+          comment_failed: `${errorMessage(error)}. Post who notices with comment kind note.`,
+        };
+      }
+    }
+
     let yourUnclaimed: UnclaimedFilings | { error: string };
     try {
       yourUnclaimed = await unclaimedFilings(this.gql, team.key, this.now());
@@ -1903,6 +2025,8 @@ export class StrictLinear {
     return {
       ...created,
       ...(filedNew ? { filed_new: filedNew } : {}),
+      ...(routed ? { routed } : {}),
+      ...(routeVerdict?.route === 'unknown' ? { route_unchecked: routeVerdict.error } : {}),
       ...(overlapUnchecked ? { overlap_unchecked: overlapUnchecked } : {}),
       ...(overlapNote ? { overlap_note: overlapNote } : {}),
       ...(home.inherited ? { project: home.inherited } : {}),
@@ -1910,6 +2034,22 @@ export class StrictLinear {
       your_unclaimed: yourUnclaimed,
     };
   }
+}
+
+/**
+ * One error for every refusal a create_issue call collected. A lone refusal is thrown as it is; several
+ * are numbered under one "Nothing was filed". The overlap candidates stay on the error as data.
+ */
+function refuseAll(problems: string[], overlap?: OverlapRefusal): never {
+  if (problems.length === 0 && overlap) throw overlap;
+  if (problems.length === 1 && !overlap) throw new Error(problems[0]);
+  const all = [...problems, ...(overlap ? [overlap.message] : [])];
+  const message = `Nothing was filed. ${String(all.length)} things to fix before the retry:\n\n${all
+    .map((m, i) => `${String(i + 1)}. ${m.replace(/^Nothing was filed:?\s*/, '')}`)
+    .join('\n\n')}`;
+  throw overlap
+    ? new OverlapRefusal(message, overlap.candidates, overlap.missing)
+    : new Error(message);
 }
 
 /**

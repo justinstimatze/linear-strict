@@ -174,7 +174,7 @@ export const strictToolDefinitions: MCPToolDefinition[] = [
   {
     name: 'list_issues',
     description:
-      'Every ticket matching the filters, in one call: the server pages through Linear to the end, so the answer is the whole set (total, by_state, and one row per ticket under columns). Rows hold identifier, title, state, assignee, delegate and updatedAt; there are no description excerpts, so read a ticket with get_issue before acting on it. More than 2000 matches is refused; narrow with open, state, cycle, project, assignee_is_me or delegate_is_me. When a task covers a set, work every row.',
+      'Every ticket matching the filters, in one call: the server pages through Linear to the end, so the answer is the whole set (total, by_state, and one row per ticket under columns). Rows hold identifier, title, state, assignee, delegate and updatedAt; there are no description excerpts, so read a ticket with get_issue before acting on it. More than 2000 matches is refused; narrow with open, state, cycle, project, label, assignee_is_me or delegate_is_me. When a task covers a set, work every row.',
     input_schema: {
       type: 'object',
       properties: {
@@ -193,6 +193,7 @@ export const strictToolDefinitions: MCPToolDefinition[] = [
         },
         project: { type: 'string', description: 'Project name or id' },
         open: { type: 'boolean', description: 'Only tickets not in a completed or canceled state' },
+        label: { type: 'string', description: 'Label name, e.g. "planet-ready"' },
       },
     },
     output_schema: LIST_ISSUES_OUTPUT,
@@ -612,6 +613,11 @@ export const strictToolDefinitions: MCPToolDefinition[] = [
           description:
             'Each close open ticket the server named, by identifier, that this one is separate from.',
         },
+        noticed_by: {
+          type: 'string',
+          description:
+            "Required of an agent filing onto a product team, when the server routes agents' own work to a team of its own: one sentence of at most 300 characters on who notices this once it is done and what changes for them. A reviewer model reads it against the ticket, and the filing is refused, pointing at the agents' team, when it reads as the agents' own work (CI, tests, gates, hooks, agent tooling, ticket bookkeeping). Posted on the new ticket.",
+        },
       },
       required: ['team', 'title'],
     },
@@ -787,6 +793,7 @@ export function strictToolHandlers(
         cycle: int(args, 'cycle'),
         project: opt(args, 'project'),
         open: bool(args, 'open'),
+        label: opt(args, 'label'),
       }),
     ),
     whoami: withArgs(() => strict.viewer()),
@@ -895,6 +902,7 @@ export function strictToolHandlers(
         project_id: opt(args, 'project_id'),
         new_because: opt(args, 'new_because'),
         distinct_from: strings(args, 'distinct_from'),
+        noticed_by: opt(args, 'noticed_by'),
       }),
     ),
   };

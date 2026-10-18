@@ -27,6 +27,53 @@ function setup(overrides: Partial<FakeState> = {}, signOff?: StrictLinearOptions
 }
 
 describe('get_issue', () => {
+  const parentRef = { id: 'p-1', identifier: 'ENG-9', title: 'Parent epic' };
+  const parentOther = (description: string) => ({ ...parentRef, description });
+
+  it('carries the parent plan, Fix and Done when verbatim, on a sub-ticket', async () => {
+    const fix = 'Use a lease table.\n\n- step one\n- step two\n' + 'x'.repeat(3000);
+    const doneWhen = '- [ ] e2e passes: `pnpm e2e`\n- [ ] flag on';
+    const { state, strict } = setup();
+    state.issue.parent = parentRef;
+    state.others.push(
+      parentOther(`## Observed\nsomething\n\n## Fix\n${fix}\n\n## Done when\n${doneWhen}\n`),
+    );
+
+    const result = await strict.getIssue('ENG-1');
+
+    expect(result.issue.parent).toEqual(parentRef);
+    expect(result.issue.parent_plan).toEqual({
+      identifier: 'ENG-9',
+      title: 'Parent epic',
+      state: state.states[0]?.name ?? null,
+      fix,
+      done_when: doneWhen,
+    });
+  });
+
+  it('returns gitBranchName, the branch that links a PR to the ticket', async () => {
+    const { strict } = setup();
+    const result = await strict.getIssue('ENG-1');
+    expect(result.issue.gitBranchName).toBe('jupiter/eng-1-a-ticket');
+  });
+
+  it('adds no parent_plan when the ticket has no parent', async () => {
+    const { strict } = setup();
+    const result = await strict.getIssue('ENG-1');
+    expect(result.issue).not.toHaveProperty('parent_plan');
+  });
+
+  it('gives fix: null, not an empty string, when the parent has no Fix section', async () => {
+    const { state, strict } = setup();
+    state.issue.parent = parentRef;
+    state.others.push(parentOther('## Done when\n- [ ] it works\n'));
+
+    const result = await strict.getIssue('ENG-1');
+
+    expect(result.issue.parent_plan?.fix).toBeNull();
+    expect(result.issue.parent_plan?.done_when).toBe('- [ ] it works');
+  });
+
   it('returns every comment across pages, oldest first, with nothing omitted', async () => {
     const { state, strict } = setup();
     addComments(state, 230);
@@ -729,6 +776,20 @@ describe('claim and the Done gate', () => {
     expect(state.issue.stateId).toBe('s-done');
   });
 
+  it('allows Done after a tool rewrote only a generated block', async () => {
+    const { state, strict } = setup();
+    editOutOfBand(
+      state,
+      `${state.issue.description}\n\n<!-- ticket-facts:begin -->\n**Live state** · generated at 2026-10-08T10:00Z\n\n* Linear: Verify\n<!-- ticket-facts:end -->`,
+    );
+    await strict.claim('ENG-1');
+    editOutOfBand(state, state.issue.description.replace('T10:00Z', 'T11:00Z'));
+
+    const read = await strict.getIssue('ENG-1');
+    expect(read.claim).toMatchObject({ edited_since_claim: false });
+    await expect(strict.setStatus('ENG-1', 'Done')).resolves.toMatchObject({ state: 'Done' });
+  });
+
   it('allows Done after the claimant re-claims to acknowledge the change', async () => {
     const { state, strict } = setup();
     await strict.claim('ENG-1');
@@ -1193,6 +1254,35 @@ describe('base: the description a patch was written against', () => {
       /no longer the one your base[\s\S]*\+ - \[ \] a check someone added[\s\S]*get_issue/,
     );
     expect(state.issue.description).toBe(before);
+  });
+
+  it('lands a patch built before a tool rewrote a generated block, and keeps the new block', async () => {
+    const { state, strict } = setup();
+    editOutOfBand(
+      state,
+      `${state.issue.description}\n\n<!-- ticket-facts:begin -->\n**Live state** · generated at 2026-10-08T10:00Z\n\n* Linear: Verify\n<!-- ticket-facts:end -->`,
+    );
+    const read = await strict.getIssue('ENG-1');
+    editOutOfBand(state, state.issue.description.replace('T10:00Z', 'T11:00Z'));
+
+    await expect(
+      strict.setState('ENG-1', observed('after refresh'), { base: read.issue.description_sha }),
+    ).resolves.toMatchObject({ updated_sections: ['Observed (append)'] });
+    expect(state.issue.description).toContain('after refresh');
+    expect(state.issue.description).toContain('generated at 2026-10-08T11:00Z');
+  });
+
+  it('refuses a patch built before a generated block was added and the text around it edited', async () => {
+    const { state, strict } = setup();
+    const read = await strict.getIssue('ENG-1');
+    editOutOfBand(
+      state,
+      `${state.issue.description}\n- [ ] a check someone added\n\n<!-- ticket-facts:begin -->\n**Live state** · generated at 2026-10-08T10:00Z\n\n* Linear: Verify\n<!-- ticket-facts:end -->`,
+    );
+
+    await expect(
+      strict.setState('ENG-1', observed('late'), { base: read.issue.description_sha }),
+    ).rejects.toThrow(/no longer the one your base/);
   });
 
   it('refuses a base this server never returned, without a diff', async () => {

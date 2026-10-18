@@ -36,7 +36,34 @@ describe('create_issue', () => {
     // Work under way first, so the likeliest home is at the top.
     await expect(attempt).rejects.toThrow(/- Alpha launch \(p-alpha\)\n- Later \(p-later\)/);
     expect(state.created).toEqual([]);
-    expect(state.calls.map((c) => c.operation)).not.toContain('StrictOverlap');
+  });
+
+  it('reports a missing home and the close open tickets in one refusal, so one retry fixes both', async () => {
+    const { state, strict } = setup({
+      projects: [{ id: 'p-alpha', name: 'Alpha launch' }],
+      closeTickets: close,
+    });
+    const attempt = strict.createIssue({ team: 'ENG', title: 'Logs keep chats' });
+    await expect(attempt).rejects.toThrow(/Nothing was filed\. 2 things to fix/);
+    await expect(attempt).rejects.toThrow(
+      /1\. a new ticket needs a home[\s\S]*2\. these open tickets[\s\S]*ENG-7/,
+    );
+    await expect(attempt).rejects.toMatchObject({ name: 'OverlapRefusal' });
+    expect(state.created).toEqual([]);
+  });
+
+  it('reports an overlong new_because and noticed_by together, before any call', async () => {
+    const { state, strict } = setup({});
+    const attempt = strict.createIssue({
+      team: 'ENG',
+      title: 'Logs keep chats',
+      new_because: 'x'.repeat(301),
+      noticed_by: 'y'.repeat(400),
+    });
+    await expect(attempt).rejects.toThrow(
+      /2 things to fix[\s\S]*new_because is 301[\s\S]*noticed_by is 400/,
+    );
+    expect(state.calls).toEqual([]);
   });
 
   it("refuses, saying why, when the team's projects cannot be read", async () => {

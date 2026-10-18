@@ -10,7 +10,7 @@ import {
   commentAuthorKind,
 } from './facts.js';
 import type { Omission } from './graphql.js';
-import { type IssueCore, type Person, authorName } from './issue-core.js';
+import { type IssueCore, type Person, authorName, nameOf } from './issue-core.js';
 import { MARKER_URLS } from './marker.js';
 
 export interface CommentNode {
@@ -95,9 +95,7 @@ export function descriptionEdits(history: HistoryNode[]) {
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
     .map((entry) => ({
       at: entry.createdAt,
-      by: entry.actor
-        ? entry.actor.displayName || entry.actor.name
-        : (entry.botActor?.name ?? null),
+      by: entry.actor ? nameOf(entry.actor) : (entry.botActor?.name ?? null),
     }));
 }
 

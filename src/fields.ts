@@ -430,6 +430,10 @@ async function findIssue(gql: Gql, ref: string) {
   return issue;
 }
 
-function nameOf(person: { name: string; displayName?: string | undefined }) {
-  return person.displayName || person.name;
+function nameOf(person: {
+  name: string;
+  displayName?: string | undefined;
+  app?: boolean | null | undefined;
+}) {
+  return person.app ? person.name : person.displayName || person.name;
 }

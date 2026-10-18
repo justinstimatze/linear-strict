@@ -10,12 +10,12 @@ export const MARKER_DELETE = `mutation StrictMarkerDelete($id: String!) { attach
 export const PAGE_INFO = 'pageInfo { hasNextPage endCursor }';
 
 const ISSUE_CORE = `
-  id identifier title description url priority createdAt updatedAt archivedAt trashed
+  id identifier title description url branchName priority createdAt updatedAt archivedAt trashed
   state { id name type }
   team { id key name }
   assignee { id name displayName app }
-  delegate { id name displayName }
-  creator { id name displayName }
+  delegate { id name displayName app }
+  creator { id name displayName app }
   parent { id identifier title }
   project { id name status { type } }
   releases(first: 20) { nodes { name version url completedAt stage { name type } } ${PAGE_INFO} }
@@ -38,7 +38,7 @@ export const COMMENTS_QUERY = connectionQuery(
 
 export const HISTORY_QUERY = connectionQuery(
   'history',
-  'id createdAt updatedDescription actor { id name displayName } botActor { name }',
+  'id createdAt updatedDescription actor { id name displayName app } botActor { name }',
 );
 export const RELATIONS_QUERY = connectionQuery(
   'relations',
@@ -61,7 +61,7 @@ export const CONTENT_HISTORY_QUERY = `query StrictContentHistory($id: String!) {
   documentContentHistory(id: $id) { success history { contentDataSnapshotAt actorIds contentData } }
 }`;
 export const USERS_BY_ID_QUERY = `query StrictUsersById($ids: [ID!]) {
-  users(filter: { id: { in: $ids } }, includeDisabled: true, first: 100) { nodes { id name displayName } }
+  users(filter: { id: { in: $ids } }, includeDisabled: true, first: 100) { nodes { id name displayName app } }
 }`;
 
 export const VIEWER_QUERY = `query StrictViewer { viewer { id name displayName app } }`;

@@ -54,6 +54,16 @@ const FENCE = /^\s*(```|~~~)/;
 /** Tool-written lines that end the section above them: a generated block, or the reconciled marker. */
 const BOUNDARY = /<!--\s*(?:[\w.-]+:begin|strict:reconciled\b[^>]*)\s*-->/;
 const GENERATED_ANY = /<!--\s*[\w.-]+:(begin|end)\s*-->/;
+/**
+ * The description with every generated block removed, begin and end markers included. A tool
+ * rewrites its own block on a schedule (ticket-facts' Live state), and that rewrite says nothing
+ * about the text an agent read, patched or claimed, so the base check, the claim check and the
+ * changed-elsewhere check compare descriptions through this.
+ */
+export function withoutGeneratedBlocks(text: string): string {
+  return text.replace(/<!--\s*([\w.-]+):begin\s*-->[\s\S]*?<!--\s*\1:end\s*-->\n?/g, '');
+}
+
 // A time after the date is allowed (2026-09-25 04:40Z); only the date is checked.
 const OBSERVED_LINE =
   /^(?:[-*]\s+)?(\d{4}-\d{2}-\d{2})(?:[T ]\d{2}:\d{2}(?::\d{2})?(?:Z|[+-]\d{2}:?\d{2}| ?UTC)?)?\s+·\s+(\S.*?)\s+·\s+(\S.*)$/;
