@@ -122,7 +122,7 @@ const ISSUE_ARG = { type: 'string', description: 'Issue identifier (e.g. ENG-123
 const PATCH_SCHEMA = {
   type: 'array',
   description:
-    'Description sections to change. Impact is the one plain-language line at the top saying who notices this work (mode replace). Observed lines must be "YYYY-MM-DD · <source: command, SHA or query> · <what it showed>". Done when lines must be checklist items ("- [ ] <check that proves it>"). Open questions changes only through comment kinds ask and answer.',
+    'Description sections to change. Impact is the one plain-language line at the top saying who notices this work (mode replace). Write it as something a person using the product can see or cause, or that production evidence shows; a closer checks it by walking the product or querying production, so a rare internal event (a provider timeout, an outage, a config state) goes under Done when with the spec that injures it. Observed lines must be "YYYY-MM-DD · <source: command, SHA or query> · <what it showed>". Done when lines must be checklist items ("- [ ] <check that proves it>"). Open questions changes only through comment kinds ask and answer.',
   items: {
     type: 'object',
     properties: {
