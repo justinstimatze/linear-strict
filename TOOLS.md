@@ -189,11 +189,17 @@ A typed comment, headed `🤖 <author> · <date> · <kind>`. The server writes t
 |---|---|---|
 | `evidence` | | Optional `patch`, usually an `Observed` line |
 | `correction` | `patch` | The patch that makes the description say the corrected thing |
-| `ask` | | Adds an `OPEN` row under `Open questions`; `ask_to` names who should answer. When it names one member of the workspace, the comment mentions them by profile link, which notifies them; `ask_to_mentioned` says whether it did |
+| `ask` | | Adds an `OPEN` row under `Open questions`; `ask_to` names who should answer, by name, handle or email. It must name one member of the workspace, who is mentioned on an `Asking @handle` line and notified; any other `ask_to` is refused |
 | `answer` | `answers` (e.g. `Q3`) | Flips that row to `ANSWERED` with a link to this comment |
 | `closed_by` | `closed_by`, `relation` | Sets the Linear relation (`duplicate` or `fixed_there`) and records it under `Fix` |
 
-Other arguments: `issue`, `kind` and `body` (required); `base`, required with `patch`, as for `set_state`; and `author_label`, the agent name shown when writing with a personal key.
+Other arguments: `issue`, `kind` and `body` (required); `base`, required with `patch`, as for `set_state`; `author_label`, the agent name shown when writing with a personal key; `parent` and `edit`, below.
+
+**Mentions.** An `@name` in `body`, outside code spans and fenced blocks, must name one active member: by handle (their Linear display name), full name, or first name, in that order. It is written as `@handle`, the form Linear's markdown turns into a mention that notifies them, and the result lists `mentioned`. One that matches nobody, or several people, is refused with the members it could be, and nothing is written. An `@` inside a word (an email address, `mayor@justin`) or before a slash (`@types/node`) is not a mention; put any other `@` that isn't one in backticks.
+
+**Replies.** `parent` posts the comment in another comment's thread. It takes the comment's id from `get_issue`, the 8 characters after `#comment-` in its URL, or the URL. Linear threads are one level deep, so a reply to a reply goes under the comment that opened the thread; `reply_to` names it. Every kind can reply.
+
+**Edits.** `edit` replaces the text of a comment instead of posting one, named the same way as `parent`. Only a comment this identity posted through this server can be edited: another author's is refused, and so is one with no `🤖` header (with a personal key, the person's own typed comment). `kind` must be the comment's kind. The header it was posted under stays, as do the `Asking` and `Description updated` lines the server added; the new text goes through the same header stripping, mention check and hooks as a new comment. An edit takes no `patch`, `base`, `answers`, `ask_to`, `closed_by`, `relation` or `parent`, since those change the ticket; post a new comment for them. The first line of an ask is its `Open questions` row, so an edit keeps it. Linear dates the edit (`editedAt`), and `get_issue` lists the comment under `drift.edited_after_reconcile` when the description already accounted for it.
 
 ### `set_status`
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- `comment` takes `parent`, a comment id, its 8-character URL prefix or its URL, and replies in that comment's thread. A reply to a reply goes under the comment that opened the thread. `parent` used to be refused with a pointer to `set_fields`, whose `parent` is a ticket's.
+- `comment` takes `edit` to replace the text of a comment this identity posted through this server, keeping its header, its kind and the lines the server added. Another author's comment, or one with no `🤖` header, is refused. The new text gets the same checks and hooks as a new comment; arguments that change the ticket (`patch`, `answers`, `ask_to`, `closed_by`, `relation`, `parent`) are refused on an edit.
+- An `@name` in a comment body, outside code, is resolved to one member and written as their `@handle`, which Linear turns into a mention that notifies them; the result lists `mentioned`. One that matches nobody or several people is refused with the candidates.
+- `ask_to` is written as `Asking @handle` instead of a profile link, and one that does not name exactly one member is refused rather than posted as text. The result's `ask_to_mentioned` and `ask_to_note` are replaced by `mentioned`.
+
 ## 0.2.0 — 2026-10-02
 
 - `linear-strict/library` exports `StrictLinear`, `linearGql` and `OverlapRefusal`, so a script that files tickets goes through the same checks as an agent. An overlap refusal carries the close tickets as `candidates`.

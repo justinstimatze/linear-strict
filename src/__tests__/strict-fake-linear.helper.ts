@@ -14,6 +14,8 @@ export interface FakeComment {
   createdAt: string;
   userName: string;
   editedAt?: string;
+  /** The comment that opened the thread this one is a reply in. */
+  parentId?: string;
 }
 
 export interface FakeState {
@@ -288,9 +290,9 @@ export function fakeGql(state: FakeState): Gql {
           updatedAt: c.createdAt,
           editedAt: c.editedAt ?? null,
           url: `https://linear.app/x/issue/${issue.identifier}#comment-${c.id}`,
-          parent: null,
+          parent: c.parentId ? { id: c.parentId } : null,
           user: {
-            id: `u-${c.userName}`,
+            id: c.userName === state.viewer.name ? state.viewer.id : `u-${c.userName}`,
             name: c.userName,
             displayName: c.userName,
             app: c.userName === state.viewer.name && state.viewer.app,
@@ -575,7 +577,9 @@ export function fakeGql(state: FakeState): Gql {
         };
       }
       case 'StrictCommentCreate': {
-        const input = variables['input'] as { body: string; issueId: string };
+        const input = variables['input'] as { body: string; issueId: string; parentId?: string };
+        if (input.parentId && !state.comments.some((c) => c.id === input.parentId))
+          throw new Error(`fake Linear has no comment ${input.parentId}`);
         if (input.issueId !== issue.id) {
           state.otherComments.push({ issueId: input.issueId, body: input.body });
           const id = `o-${String(state.otherComments.length)}`;
@@ -591,6 +595,7 @@ export function fakeGql(state: FakeState): Gql {
           body: input.body,
           createdAt: tick(state),
           userName: state.viewer.name,
+          ...(input.parentId ? { parentId: input.parentId } : {}),
         };
         state.comments.push(comment);
         return {
@@ -601,6 +606,47 @@ export function fakeGql(state: FakeState): Gql {
               url: `https://linear.app/x/issue/${issue.identifier}#comment-${comment.id}`,
               createdAt: comment.createdAt,
             },
+          },
+        };
+      }
+      case 'StrictCommentUpdate': {
+        const comment = state.comments.find((c) => c.id === variables['id']);
+        if (!comment) throw new Error(`fake Linear has no comment ${String(variables['id'])}`);
+        comment.body = (variables['input'] as { body: string }).body;
+        comment.editedAt = tick(state);
+        return {
+          commentUpdate: {
+            success: true,
+            comment: {
+              id: comment.id,
+              url: `https://linear.app/x/issue/${issue.identifier}#comment-${comment.id}`,
+              editedAt: comment.editedAt,
+            },
+          },
+        };
+      }
+      case 'StrictMentionCandidates': {
+        const filter = variables['filter'] as { or: Filter[] };
+        const nodes = state.users.filter((user) =>
+          filter.or.some((clause) =>
+            Object.entries(clause).some(([field, comparator]) => {
+              const wanted = comparator?.['containsIgnoreCase'];
+              return (
+                typeof wanted === 'string' &&
+                user[field as 'name' | 'displayName'].toLowerCase().includes(wanted.toLowerCase())
+              );
+            }),
+          ),
+        );
+        return {
+          users: {
+            nodes: nodes.map(({ id, name, displayName, email, active }) => ({
+              id,
+              name,
+              displayName,
+              email,
+              active,
+            })),
           },
         };
       }

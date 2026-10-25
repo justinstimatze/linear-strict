@@ -74,6 +74,10 @@ export const COMMENT_CREATE = `mutation StrictCommentCreate($input: CommentCreat
   commentCreate(input: $input) { success comment { id url createdAt } }
 }`;
 
+export const COMMENT_UPDATE = `mutation StrictCommentUpdate($id: String!, $input: CommentUpdateInput!) {
+  commentUpdate(id: $id, input: $input) { success comment { id url editedAt } }
+}`;
+
 export const TEAM_STATES_QUERY = `query StrictTeamStates($id: String!) {
   issue(id: $id) { team { states(first: 100) { nodes { id name type } } } }
 }`;

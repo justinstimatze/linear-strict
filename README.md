@@ -162,7 +162,7 @@ Each ticket this server has reconciled carries one attachment titled "linear-str
 | `claim` | Take a ticket and snapshot its description; refuses one another agent holds |
 | `check_claim` | Whether the description changed since your claim, with a diff |
 | `set_state` | Patch description sections and/or move the reconciled marker |
-| `comment` | Typed comment: `evidence`, `correction`, `ask`, `answer`, `closed_by` |
+| `comment` | Typed comment: `evidence`, `correction`, `ask`, `answer`, `closed_by`; replies in a thread (`parent`), edits your own (`edit`), and turns `@name` into a mention |
 | `set_status` | Move to a workflow state; completed states pass the Done gate |
 | `set_fields` | Priority, owner, labels, cycle, project, milestone, parent, dates, relations and linked PRs; never the description or state |
 | `create_issue` | New ticket with validated sections, under a parent or in a project, placed against the closest open tickets |
