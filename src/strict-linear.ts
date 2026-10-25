@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { type FieldChanges, findUser, resolveFields } from './fields.js';
+import { type FieldChanges, findUser, resolveFields, resolveMentions } from './fields.js';
 import type { ClaimRecord, ClaimStore } from './claims.js';
 import { diffOps, lineDiff } from './diff.js';
 import { type PmNode, renderMarkdown } from './prosemirror.js';
@@ -55,6 +55,7 @@ import {
   ATTACHMENTS_QUERY,
   CHILDREN_QUERY,
   COMMENT_CREATE,
+  COMMENT_UPDATE,
   COMMENTS_QUERY,
   connectionQuery,
   CONTENT_HISTORY_QUERY,
@@ -102,9 +103,11 @@ import {
   type CommentDraft,
   commentBody,
   commentLabel,
-  type Mention,
-  mentionResult,
+  editedCommentText,
+  firstContentLine,
+  mentionsIn,
   patchSummary,
+  rewriteMentions,
   questionFor,
 } from './comment-rules.js';
 import {
@@ -1345,10 +1348,10 @@ export class StrictLinear {
     return { dropped, note: answer.note, signer: answer.signer ?? 'person', model: answer.model };
   }
 
-  private async postComment(issueId: string, body: string) {
+  private async postComment(issueId: string, body: string, parentId?: string) {
     const data = await this.gql<{
       commentCreate: { success: boolean; comment: { id: string; url: string; createdAt: string } };
-    }>(COMMENT_CREATE, { input: { issueId, body } });
+    }>(COMMENT_CREATE, { input: { issueId, body, ...(parentId ? { parentId } : {}) } });
     if (!data.commentCreate.success)
       throw new Error('Linear reported commentCreate as unsuccessful');
     return data.commentCreate.comment;
@@ -1363,12 +1366,13 @@ export class StrictLinear {
   async comment(id: string, args: CommentArgs) {
     const patch = args.patch ?? [];
     checkCommentArgs(args, patch);
-    const body = commentBody(args.body, patch.length > 0);
-    if (body === '') {
+    const typed = commentBody(args.body, patch.length > 0 || args.edit !== undefined);
+    if (typed === '') {
       throw new Error(
         'body holds only a comment header. The server writes the header from kind; send the content alone.',
       );
     }
+    if (args.edit !== undefined) return this.editComment(id, args.edit, args.kind, typed);
 
     const issue = await this.writable(id);
     this.checkBase(issue, args.base);
@@ -1385,14 +1389,16 @@ export class StrictLinear {
       args.kind === 'closed_by' && args.closed_by
         ? await this.closingIssue(issue, args.closed_by)
         : null;
-    const mention =
-      args.kind === 'ask' && args.ask_to ? await this.mentionFor(args.ask_to, viewer) : null;
+    const asked =
+      args.kind === 'ask' && args.ask_to ? await this.askedHandle(args.ask_to, viewer) : null;
+    const { body, mentioned } = await this.withMentions(typed);
+    const parent = args.parent ? await this.threadRoot(issue, args.parent) : null;
 
     const label = commentLabel(args, viewer);
     const date = this.today();
     const subject = questionId ?? closedBy?.identifier;
     const header = `🤖 ${label} · ${date} · ${args.kind}${subject ? ` ${subject}` : ''}`;
-    const askLine = mention && 'url' in mention ? `\n\nAsking ${mention.url}` : '';
+    const askLine = asked ? `\n\nAsking @${asked}` : '';
     const patchNote =
       patch.length > 0 ? `\n\nDescription updated: ${patchSummary(patch).join(', ')}.` : '';
     const draft: CommentDraft = {
@@ -1403,11 +1409,119 @@ export class StrictLinear {
       date,
       label,
       text: `${header}\n\n${body}${askLine}${patchNote}`,
+      parentId: parent?.id,
     };
 
-    if (args.kind === 'correction' || args.kind === 'evidence') return this.postLogged(draft);
-    if (closedBy && args.relation) return this.postClosedBy(draft, closedBy, args.relation);
-    return this.postQuestionRow(draft, questionId, mention);
+    const posted =
+      args.kind === 'correction' || args.kind === 'evidence'
+        ? await this.postLogged(draft)
+        : closedBy && args.relation
+          ? await this.postClosedBy(draft, closedBy, args.relation)
+          : await this.postQuestionRow(draft, questionId);
+    const notified = [...(asked ? [asked] : []), ...mentioned].map((handle) => `@${handle}`);
+    return {
+      ...posted,
+      ...(parent ? { reply_to: parent.id } : {}),
+      ...(notified.length > 0 ? { mentioned: [...new Set(notified)] } : {}),
+    };
+  }
+
+  /**
+   * Replaces the text of a comment this identity posted through this server. The header it was
+   * posted under stays, since its kind, date and question row are what the post did; the new text
+   * gets the same header, mention and hook checks a new comment does. Linear dates the edit
+   * (editedAt), and get_issue flags it when the description already accounted for the comment.
+   */
+  private async editComment(id: string, ref: string, kind: CommentArgs['kind'], typed: string) {
+    const issue = await this.writable(id);
+    const viewer = await this.viewer();
+    const target = await this.findComment(issue, ref, 'edit');
+    const by = target.user ? nameOf(target.user) : (target.botActor?.name ?? 'an integration');
+    if (target.user?.id !== viewer.id) {
+      throw new Error(
+        `Nothing was written: comment ${target.id} on ${issue.identifier} was written by ${by}, not ${nameOf(viewer)}. Only its author edits a comment. Reply under it with parent, or post a correction.`,
+      );
+    }
+    const original = commentKind(target.body);
+    if (original === null) {
+      throw new Error(
+        `Nothing was written: comment ${target.id} on ${issue.identifier} has no 🤖 header, so ${nameOf(viewer)} typed it in Linear rather than an agent posting it here. Edit it in Linear, or reply under it with parent.`,
+      );
+    }
+    if (original !== kind) {
+      throw new Error(
+        `Nothing was written: comment ${target.id} is a${/^[aeiou]/.test(original) ? 'n' : ''} ${original} comment, and an edit keeps its kind. Pass kind "${original}", or post a new ${kind} comment.`,
+      );
+    }
+    const { body, mentioned } = await this.withMentions(typed);
+    if (kind === 'ask' && firstContentLine(body) !== firstContentLine(target.body)) {
+      throw new Error(
+        `Nothing was written: the first line of an ask is its row under Open questions, which an edit leaves as it was: "${firstContentLine(target.body)}". Keep that line, or post a new ask for a different question.`,
+      );
+    }
+    const text = editedCommentText(target.body, body);
+    const result = {
+      identifier: issue.identifier,
+      kind,
+      edited: target.id,
+      comment_url: target.url,
+      ...(mentioned.length > 0 ? { mentioned: mentioned.map((handle) => `@${handle}`) } : {}),
+    };
+    if (text === target.body.trim()) return { ...result, unchanged: true };
+    const data = await this.gql<{
+      commentUpdate: { success: boolean; comment: { id: string; url: string; editedAt: string } };
+    }>(COMMENT_UPDATE, { id: target.id, input: { body: text } });
+    if (!data.commentUpdate.success)
+      throw new Error('Linear reported commentUpdate as unsuccessful');
+    return {
+      ...result,
+      editedAt: data.commentUpdate.comment.editedAt,
+      note: 'If the description already accounted for this comment, get_issue now lists it under drift.edited_after_reconcile until the next reconcile.',
+    };
+  }
+
+  /** A comment on this ticket, by id, the 8-character prefix its URL shows, or that URL. */
+  private async findComment(issue: IssueCore, ref: string, role: 'edit' | 'parent') {
+    const wanted = ref
+      .trim()
+      .replace(/^.*#comment-/, '')
+      .toLowerCase();
+    const comments = await paginate<CommentNode>(
+      'comments',
+      this.connection<CommentNode>(COMMENTS_QUERY, issue.id, 'comments'),
+    );
+    const exact = comments.nodes.filter((comment) => comment.id.toLowerCase() === wanted);
+    const matches =
+      exact.length > 0 || wanted.length < 8
+        ? exact
+        : comments.nodes.filter((comment) => comment.id.toLowerCase().startsWith(wanted));
+    const [found] = matches;
+    if (found && matches.length === 1) return found;
+    if (matches.length > 1) {
+      throw new Error(
+        `Nothing was written: ${role} ${ref} matches ${String(matches.length)} comments on ${issue.identifier}: ${matches.map((comment) => comment.id).join(', ')}. Pass the full id.`,
+      );
+    }
+    const [gap] = comments.omitted;
+    throw new Error(
+      gap
+        ? `Nothing was written: ${role} ${ref} is not among the comments read on ${issue.identifier}, and not all of them could be read (${gap.reason}). Retry.`
+        : `Nothing was written: ${role} ${ref} is not a comment on ${issue.identifier}. Pass a comment id from get_issue: the full id, or the 8 characters after #comment- in its URL.`,
+    );
+  }
+
+  // Linear threads are one level deep, so a reply to a reply goes under the comment that opened the thread.
+  private async threadRoot(issue: IssueCore, ref: string) {
+    const found = await this.findComment(issue, ref, 'parent');
+    return { id: found.parent?.id ?? found.id };
+  }
+
+  /** The body with each @name rewritten to its member's handle; refuses one that names nobody or several. */
+  private async withMentions(body: string) {
+    const names = mentionsIn(body);
+    if (names.length === 0) return { body, mentioned: [] };
+    const handles = await resolveMentions(this.gql, names);
+    return { body: rewriteMentions(body, handles), mentioned: [...new Set(handles.values())] };
   }
 
   private async closingIssue(issue: IssueCore, ref: string) {
@@ -1420,24 +1534,26 @@ export class StrictLinear {
     return found.issue;
   }
 
-  // Linear turns a profile URL in a comment into a mention, which notifies the person; a name
-  // alone is plain text nobody is told about. A name that doesn't resolve to one member stays text.
-  private async mentionFor(askTo: string, viewer: Viewer): Promise<Mention> {
+  // ask_to is written as an @handle line, which Linear turns into a mention that notifies the
+  // person, the same as an @name in the body. A name that isn't exactly one member is refused alike.
+  private async askedHandle(askTo: string, viewer: Viewer) {
     try {
-      const person = await findUser(this.gql, askTo, viewer);
-      return person.url ? { url: person.url } : { unresolved: 'Linear returned no profile URL' };
+      return (await findUser(this.gql, askTo, viewer)).displayName;
     } catch (error) {
-      return { unresolved: errorMessage(error) };
+      throw new Error(
+        `Nothing was written: ask_to ${errorMessage(error)} ask_to mentions and notifies who should answer, so it must name one member; name anyone else in the body.`,
+        { cause: error },
+      );
     }
   }
 
   // A correction's patch lands before its comment: if the comment then
   // fails, the description is still right and only the log entry is missing.
-  private async postLogged({ issue, args, patch, description, text }: CommentDraft) {
+  private async postLogged({ issue, args, patch, description, text, parentId }: CommentDraft) {
     const wrote = patch.length > 0 ? await this.writeDescription(issue, description) : null;
     let comment;
     try {
-      comment = await this.postComment(issue.id, text);
+      comment = await this.postComment(issue.id, text, parentId);
     } catch (error) {
       throw new Error(
         `The description patch landed but the comment did not post (${errorMessage(error)}). Retry the comment as kind "evidence" without a patch.`,
@@ -1465,11 +1581,11 @@ export class StrictLinear {
   }
 
   private async postClosedBy(
-    { issue, args, description, date, text }: CommentDraft,
+    { issue, args, description, date, text, parentId }: CommentDraft,
     closedBy: { id: string; identifier: string },
     relation: 'duplicate' | 'fixed_there',
   ) {
-    const comment = await this.postComment(issue.id, text);
+    const comment = await this.postComment(issue.id, text, parentId);
     const steps: string[] = [];
     try {
       // Linear reads a duplicate relation as "issueId duplicates relatedIssueId".
@@ -1504,11 +1620,10 @@ export class StrictLinear {
 
   // ask and answer need the comment's URL for the row, so the comment goes first.
   private async postQuestionRow(
-    { issue, args, patch, description, date, label, text }: CommentDraft,
+    { issue, args, patch, description, date, label, text, parentId }: CommentDraft,
     questionId: string | null,
-    mention: Mention | null,
   ) {
-    const comment = await this.postComment(issue.id, text);
+    const comment = await this.postComment(issue.id, text, parentId);
     const rowId = questionId ?? nextQuestionId(description);
     let sha: string;
     try {
@@ -1535,7 +1650,6 @@ export class StrictLinear {
       kind: args.kind,
       question: questionId,
       comment_url: comment.url,
-      ...mentionResult(mention, args.ask_to),
       description_sha: sha,
       ...(patch.length > 0 ? { updated_sections: patchSummary(patch) } : {}),
     };

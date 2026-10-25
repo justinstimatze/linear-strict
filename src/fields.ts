@@ -421,6 +421,56 @@ export async function findUser(
   return user;
 }
 
+const MENTION_CANDIDATES_QUERY = `query StrictMentionCandidates($filter: UserFilter!) {
+  users(first: 50, filter: $filter) { nodes { id name displayName email active } }
+}`;
+
+/**
+ * Resolves each @name to one active member's handle (their Linear display name), the form
+ * Linear's markdown turns into a mention that notifies them. A handle matches first, then a full
+ * name, then a first name. Refuses, listing who it could be, when any name matches nobody or
+ * more than one person. Returns lowercase name → handle.
+ */
+export async function resolveMentions(gql: Gql, names: string[]): Promise<Map<string, string>> {
+  const handles = new Map<string, string>();
+  const problems: string[] = [];
+  const shown = (user: UserNode) =>
+    user.name === user.displayName ? `@${user.displayName}` : `@${user.displayName} (${user.name})`;
+  for (const name of names) {
+    const wanted = name.toLowerCase();
+    const { users } = await gql<{ users: { nodes: UserNode[] } }>(MENTION_CANDIDATES_QUERY, {
+      filter: {
+        or: [{ displayName: { containsIgnoreCase: name } }, { name: { containsIgnoreCase: name } }],
+      },
+    });
+    const active = users.nodes.filter((user) => user.active);
+    const tiers = [
+      active.filter((user) => user.displayName.toLowerCase() === wanted),
+      active.filter((user) => user.name.toLowerCase() === wanted),
+      active.filter((user) => user.name.toLowerCase().split(/\s+/)[0] === wanted),
+    ];
+    const picks = tiers.find((tier) => tier.length > 0) ?? [];
+    const [only] = picks;
+    if (only && picks.length === 1) {
+      handles.set(wanted, only.displayName);
+    } else if (picks.length > 1) {
+      problems.push(
+        `@${name} matches ${String(picks.length)} people: ${picks.map(shown).join(', ')}. Use the handle of the one you mean.`,
+      );
+    } else {
+      problems.push(
+        `@${name} matches nobody in the workspace${active.length > 0 ? `; close: ${active.slice(0, 10).map(shown).join(', ')}` : ''}.`,
+      );
+    }
+  }
+  if (problems.length > 0) {
+    throw new Error(
+      `Nothing was written: ${problems.join(' ')} An @name in a comment mentions and notifies that person, so each must name exactly one member. Put text that is not a mention in backticks.`,
+    );
+  }
+  return handles;
+}
+
 async function findIssue(gql: Gql, ref: string) {
   const { issue } = await gql<{ issue: { id: string; identifier: string } | null }>(
     ISSUE_REF_QUERY,

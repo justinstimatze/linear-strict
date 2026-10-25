@@ -19,9 +19,11 @@ export interface CommentArgs {
   author_label?: string | undefined;
   /** description_sha of the description a patch was written against. */
   base?: string | undefined;
+  /** A comment on this ticket to reply under: its id, an 8-character prefix, or its URL. */
+  parent?: string | undefined;
+  /** A comment this identity posted on this ticket, whose text this call replaces. */
+  edit?: string | undefined;
 }
-
-export type Mention = { url: string } | { unresolved: string };
 
 /** A comment with every check passed and its text composed, ready to post. */
 export interface CommentDraft {
@@ -33,6 +35,8 @@ export interface CommentDraft {
   date: string;
   label: string;
   text: string;
+  /** The comment that opened the thread this one replies in. */
+  parentId?: string | undefined;
 }
 
 /** Refuses argument combinations the kind doesn't allow, before anything is read. */
@@ -59,6 +63,26 @@ export function checkCommentArgs(args: CommentArgs, patch: SectionPatch[]) {
   }
   if (!closing && (args.closed_by || args.relation)) {
     throw new Error('closed_by and relation are only valid with kind "closed_by"');
+  }
+  if (args.edit !== undefined) checkEditArgs(args, patch);
+}
+
+// An edit replaces the text of the log entry and nothing else. Every argument that changes the
+// ticket's state rode on the original post; changing it again needs a new comment that says so.
+function checkEditArgs(args: CommentArgs, patch: SectionPatch[]) {
+  const stateful = [
+    patch.length > 0 ? 'patch' : '',
+    args.base ? 'base' : '',
+    args.answers ? 'answers' : '',
+    args.ask_to ? 'ask_to' : '',
+    args.closed_by ? 'closed_by' : '',
+    args.relation ? 'relation' : '',
+    args.parent ? 'parent' : '',
+  ].filter(Boolean);
+  if (stateful.length > 0) {
+    throw new Error(
+      `Nothing was written: an edit changes only the comment's text, so it takes no ${stateful.join(', ')}. Post a new comment for that, replying under this one with parent if it belongs in the thread.`,
+    );
   }
 }
 
@@ -121,11 +145,76 @@ export function patchSummary(patch: SectionPatch[]) {
   return patch.map((p) => `${p.section} (${p.mode})`);
 }
 
-export function mentionResult(mention: Mention | null, askTo: string | undefined) {
-  if (!mention) return {};
-  if ('url' in mention) return { ask_to_mentioned: true };
-  return {
-    ask_to_mentioned: false,
-    ask_to_note: `${askTo ?? ''} was written as text and not notified: ${mention.unresolved}`,
-  };
+const SERVER_TRAILER_LINE = /^(Asking \S+|Description updated: .*)$/;
+
+/**
+ * An edited comment: the original header line, which carries the kind, the date and the row it
+ * wrote, then the new text, then the lines the server appended to the original (the person an ask
+ * was put to, the sections a patch changed), since those stay true of the post.
+ */
+export function editedCommentText(original: string, body: string) {
+  const lines = original.trim().split('\n');
+  const header = lines.shift() ?? '';
+  const trailer: string[] = [];
+  while (lines.length > 0 && SERVER_TRAILER_LINE.test(lines.at(-1)?.trim() ?? '')) {
+    trailer.unshift(lines.pop()?.trim() ?? '');
+    while (lines.length > 0 && lines.at(-1)?.trim() === '') lines.pop();
+  }
+  return [header, body, ...trailer].join('\n\n');
+}
+
+/** The first line of a typed comment's content: for an ask, its Open questions row. */
+export function firstContentLine(text: string) {
+  const lines = text.trim().split('\n');
+  if (commentKind(lines[0] ?? '') !== null) lines.shift();
+  return lines.find((line) => line.trim() !== '')?.trim() ?? '';
+}
+
+// Code is quoted, not addressed: mask fenced blocks and inline spans so an @ inside them is left alone.
+function maskCode(text: string) {
+  const lines = text.split('\n');
+  let fence: string | null = null;
+  const masked = lines.map((line) => {
+    const opener = /^\s{0,3}(`{3,}|~{3,})/.exec(line)?.[1];
+    if (fence) {
+      if (opener?.startsWith(fence.charAt(0)) && opener.length >= fence.length) fence = null;
+      return ' '.repeat(line.length);
+    }
+    if (opener) {
+      fence = opener;
+      return ' '.repeat(line.length);
+    }
+    return line;
+  });
+  return masked
+    .join('\n')
+    .replace(/(?<!`)(`+)(?!`)[\s\S]*?[^`]\1(?!`)/g, (span) => ' '.repeat(span.length));
+}
+
+// @handle at the start of a word. Not an email or an agent name like mayor@justin (a word
+// character before it), not an npm scope like @types/node (a slash after it).
+const MENTION = /(?<![\w@./\\-])@([A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?)(?![\w/@])/g;
+
+/** Each @name in the text outside code, as typed, first occurrence first. */
+export function mentionsIn(text: string): string[] {
+  const seen = new Map<string, string>();
+  for (const match of maskCode(text).matchAll(MENTION)) {
+    const name = match[1] ?? '';
+    if (!seen.has(name.toLowerCase())) seen.set(name.toLowerCase(), name);
+  }
+  return [...seen.values()];
+}
+
+/** Rewrites each @name outside code to the handle it resolved to (keys lowercase). */
+export function rewriteMentions(text: string, handles: Map<string, string>) {
+  const masked = maskCode(text);
+  let out = '';
+  let last = 0;
+  for (const match of masked.matchAll(MENTION)) {
+    const handle = handles.get((match[1] ?? '').toLowerCase());
+    if (handle === undefined) continue;
+    out += `${text.slice(last, match.index)}@${handle}`;
+    last = match.index + match[0].length;
+  }
+  return out + text.slice(last);
 }

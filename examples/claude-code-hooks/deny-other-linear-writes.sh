@@ -23,10 +23,13 @@ save_comment | linear_createComment)
   if jq -e '.tool_input | (.issueId // .issue // .issue_id // .id // .parentId // "") == ""' <<<"$payload" >/dev/null; then
     exit 0
   fi
-  instead="comment (kinds evidence, correction, ask, answer, closed_by); comments are not edited or deleted"
+  instead="comment (kinds evidence, correction, ask, answer, closed_by; parent replies in a thread, edit changes your own comment)"
   ;;
-delete_comment | linear_updateComment | linear_deleteComment)
-  instead="comment (kinds evidence, correction, ask, answer, closed_by); comments are not edited or deleted"
+linear_updateComment)
+  instead="comment with edit (your own comment, same kind)"
+  ;;
+delete_comment | linear_deleteComment)
+  instead="comment (kinds evidence, correction, ask, answer, closed_by; parent replies in a thread, edit changes your own comment); comments are not deleted"
   ;;
 linear_archiveIssue | linear_transferIssue)
   instead="set_status (a canceled or duplicate state) or comment kind closed_by"

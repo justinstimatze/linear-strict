@@ -1216,8 +1216,8 @@ describe('typed comments', () => {
     expect(state.issue.description).toContain(
       'Q1 · OPEN · 2026-09-24 · agent-a → Ada · Is the limit per file?',
     );
-    // A profile URL is how Linear markdown mentions someone, which notifies them.
-    expect(state.comments[0]?.body).toContain('Asking https://linear.app/x/profiles/ada');
+    // Linear's markdown turns @handle into a mention, which notifies them.
+    expect(state.comments[0]?.body).toContain('Asking @Ada');
 
     await expect(
       strict.comment('ENG-1', { kind: 'answer', body: 'Per file, 25 MB.' }),

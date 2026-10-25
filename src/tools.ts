@@ -458,7 +458,7 @@ export const strictToolDefinitions: MCPToolDefinition[] = [
   {
     name: 'comment',
     description:
-      'Post a typed comment. evidence: a finding, optionally with an Observed patch. correction: must carry the description patch that makes the description say the corrected thing. ask: adds an OPEN row to Open questions. answer: must name the row it closes (answers: "Q3") and flips it to ANSWERED with a link. closed_by: this ticket\'s work landed under another ticket; names it (closed_by), sets the Linear relation (relation "duplicate" or "fixed_there") and records it under Fix. Move the state separately with set_status.',
+      'Post a typed comment. evidence: a finding, optionally with an Observed patch. correction: must carry the description patch that makes the description say the corrected thing. ask: adds an OPEN row to Open questions. answer: must name the row it closes (answers: "Q3") and flips it to ANSWERED with a link. closed_by: this ticket\'s work landed under another ticket; names it (closed_by), sets the Linear relation (relation "duplicate" or "fixed_there") and records it under Fix. Move the state separately with set_status. parent replies in a comment\'s thread. edit replaces the text of a comment you posted here, keeping its header and kind. An @name in body (outside code) becomes a mention that notifies that member; one that names nobody or several is refused with the candidates.',
     input_schema: {
       type: 'object',
       properties: {
@@ -467,12 +467,26 @@ export const strictToolDefinitions: MCPToolDefinition[] = [
         body: {
           type: 'string',
           description:
-            'Comment text, without a header: the server writes the header from kind and drops a copy typed here. For ask, the first line becomes the question row.',
+            'Comment text, without a header: the server writes the header from kind and drops a copy typed here. For ask, the first line becomes the question row. @name mentions a member (by handle, full name or first name) and notifies them; wrap an @ that is not a mention in backticks.',
+        },
+        parent: {
+          type: 'string',
+          description:
+            "Reply in this comment's thread: its id from get_issue, the 8 characters after #comment- in its URL, or the URL",
+        },
+        edit: {
+          type: 'string',
+          description:
+            'Replace the text of this comment (id, 8-character prefix or URL) instead of posting a new one. Only a comment this identity posted through this server, with the same kind; the header, and any Asking or Description updated line the server added, stay. Takes no patch, answers, ask_to, closed_by, relation or parent.',
         },
         patch: PATCH_SCHEMA,
         base: { ...BASE_ARG, description: `Required with patch. ${BASE_ARG.description}` },
         answers: { type: 'string', description: 'For kind answer: the question id, e.g. Q3' },
-        ask_to: { type: 'string', description: 'For kind ask: who should answer' },
+        ask_to: {
+          type: 'string',
+          description:
+            'For kind ask: who should answer, as a name, handle or email of one member. Written as an @mention that notifies them; refused if it is not exactly one member.',
+        },
         closed_by: {
           type: 'string',
           description: 'For kind closed_by: the ticket that carried the work',
@@ -887,6 +901,8 @@ export function strictToolHandlers(
         closed_by: opt(args, 'closed_by'),
         relation: relationArg(args),
         author_label: opt(args, 'author_label'),
+        parent: opt(args, 'parent'),
+        edit: opt(args, 'edit'),
       });
     }),
     set_status: withArgs((args) =>

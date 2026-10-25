@@ -37,6 +37,28 @@ describe('strict tools', () => {
     ).resolves.toMatchObject({ kind: 'evidence' });
   });
 
+  it('passes parent and edit through to the comment, instead of refusing them as set_fields arguments', async () => {
+    const state = fakeState({
+      comments: [
+        {
+          id: 'c-1',
+          body: '🤖 agent-a · 2026-09-20 · evidence\n\nOld.',
+          createdAt: '2026-09-20T00:00:00Z',
+          userName: 'agent-a',
+        },
+      ],
+    });
+    const comment = strictToolHandlers(
+      new StrictLinear({ gql: fakeGql(state), claims: memoryClaimStore() }),
+    )['comment'];
+    await expect(
+      comment?.({ issue: 'ENG-1', kind: 'evidence', body: 'Reply.', parent: 'c-1' }),
+    ).resolves.toMatchObject({ reply_to: 'c-1' });
+    await expect(
+      comment?.({ issue: 'ENG-1', kind: 'evidence', body: 'New.', edit: 'c-1' }),
+    ).resolves.toMatchObject({ edited: 'c-1' });
+  });
+
   it('whoami returns the identity behind the token', async () => {
     await expect(handlers()['whoami']?.({})).resolves.toEqual({
       id: 'u-agent',
