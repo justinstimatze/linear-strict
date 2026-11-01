@@ -15,6 +15,8 @@ export interface FieldChanges {
   take_over?: boolean | undefined;
   add_labels?: string[] | undefined;
   remove_labels?: string[] | undefined;
+  /** Whether a visitor will notice the change; resolved to the release-note labels before this runs. */
+  release_note?: 'yes' | 'none' | undefined;
   /** A cycle number, "current" or "next". */
   cycle?: number | string | null | undefined;
   project?: string | null | undefined;

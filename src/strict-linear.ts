@@ -128,6 +128,16 @@ import {
   releasesOut,
 } from './issue-read.js';
 import { checkDescopeArgs, checkNothingDropped, signOffRefusal } from './descope.js';
+import {
+  RELEASE_NOTE_RUBRIC,
+  releaseNoteArg,
+  type ReleaseNote,
+  type ReleaseNoteLabels,
+  releaseNoteFindings,
+  releaseNoteLabelChanges,
+  type ResolvedReleaseNoteLabels,
+  resolveReleaseNoteLabels,
+} from './release-note.js';
 import { noticedByArg, routeRefusal, type RouteVerdict, type TeamRouting } from './route.js';
 
 /**
@@ -174,6 +184,8 @@ export interface CreateIssueArgs {
   distinct_from?: string[] | undefined;
   /** On a product team, who notices this once it's done and what changes for them. */
   noticed_by?: string | undefined;
+  /** Whether a visitor to production will notice this once it ships. */
+  release_note?: ReleaseNote | undefined;
 }
 
 export interface StrictLinearOptions {
@@ -209,6 +221,12 @@ export interface StrictLinearOptions {
    * absent.
    */
   teamRouting?: TeamRouting | undefined;
+  /**
+   * The label pair that says whether a ticket belongs in the release notes. It takes effect on a
+   * team only where both labels exist; null turns it off. Defaults to release-note and
+   * release-note-none.
+   */
+  releaseNoteLabels?: ReleaseNoteLabels | null | undefined;
 }
 
 export interface SignOffRequest {
@@ -296,6 +314,12 @@ export class StrictLinear {
   private readonly overlapReader: OverlapReader | undefined;
   private readonly teamRouting: TeamRouting | undefined;
   private readonly titles: TeamTitles;
+  private readonly releaseNotePair: ReleaseNoteLabels | null;
+  /** Each team's release-note label ids, read at most once every ten minutes. */
+  private readonly releaseNoteCache = new Map<
+    string,
+    { at: number; value: Promise<ResolvedReleaseNoteLabels | null> }
+  >();
 
   constructor(options: StrictLinearOptions) {
     this.gql = options.gql;
@@ -310,6 +334,10 @@ export class StrictLinear {
     this.overlapReader = options.overlapReader;
     this.teamRouting = options.teamRouting;
     this.titles = new TeamTitles(this.gql);
+    this.releaseNotePair =
+      options.releaseNoteLabels === undefined
+        ? { yes: 'release-note', none: 'release-note-none' }
+        : options.releaseNoteLabels;
     this.principalWorkspace = options.principal
       ? new StrictWorkspace(options.principal.gql, this.now)
       : undefined;
@@ -317,6 +345,20 @@ export class StrictLinear {
 
   private today() {
     return this.now().toISOString().slice(0, 10);
+  }
+
+  /** The team's release-note labels, or null where the workspace has not created both. */
+  private releaseNoteLabels(teamId: string): Promise<ResolvedReleaseNoteLabels | null> {
+    const pair = this.releaseNotePair;
+    if (!pair) return Promise.resolve(null);
+    const cached = this.releaseNoteCache.get(teamId);
+    const at = this.now().getTime();
+    if (cached && at - cached.at < 10 * 60_000) return cached.value;
+    const value = resolveReleaseNoteLabels(this.gql, teamId, pair);
+    // A failed read is not cached, so the next call tries again.
+    value.catch(() => this.releaseNoteCache.delete(teamId));
+    this.releaseNoteCache.set(teamId, { at, value });
+    return value;
   }
 
   async viewer(): Promise<Viewer> {
@@ -580,6 +622,14 @@ export class StrictLinear {
     const description = issue.description ?? '';
     const drift = this.drift(findMarker(issue), description, sortedComments, history.nodes);
     const prs = pullRequests(attachments.nodes);
+    let releaseNote: ResolvedReleaseNoteLabels | null = null;
+    if (issue.team) {
+      try {
+        releaseNote = await this.releaseNoteLabels(issue.team.id);
+      } catch (error) {
+        omitted.push({ field: 'release_note_labels', reason: errorMessage(error) });
+      }
+    }
 
     return {
       issue: {
@@ -624,6 +674,11 @@ export class StrictLinear {
           text: [description, ...sortedComments.map((comment) => comment.body)],
           productionEnv: this.productionEnv,
         }),
+        ...releaseNoteFindings(
+          issue.state,
+          issue.labels.nodes.map((label) => label.name),
+          releaseNote,
+        ),
       ],
       drift,
       omitted,
@@ -1550,6 +1605,20 @@ export class StrictLinear {
   async setFields(id: string, changes: FieldChanges) {
     const issue = await this.writable(id);
     const viewer = await this.viewer();
+    if (changes.release_note !== undefined) {
+      const pair = issue.team ? await this.releaseNoteLabels(issue.team.id) : null;
+      if (!pair) {
+        throw new Error(
+          `release_note needs the labels "${this.releaseNotePair?.yes ?? 'release-note'}" and "${this.releaseNotePair?.none ?? 'release-note-none'}" on ${issue.team?.key ?? 'this team'} or the workspace, and they are not both there. Labels are not created here.`,
+        );
+      }
+      const { add, remove } = releaseNoteLabelChanges(changes.release_note, pair);
+      changes = {
+        ...changes,
+        add_labels: [...(changes.add_labels ?? []), add],
+        remove_labels: [...(changes.remove_labels ?? []), remove],
+      };
+    }
     const { input, changed, relations, pullRequests, delegateTakenFrom } = await resolveFields(
       this.gql,
       issue,
@@ -1893,6 +1962,7 @@ export class StrictLinear {
     };
     const newBecause = collect(() => newBecauseArg(args.new_because));
     const noticedBy = collect(() => noticedByArg(args.noticed_by));
+    const releaseNoteGiven = collect(() => releaseNoteArg(args.release_note));
     // Argument checks need no call, so they refuse before the first one.
     if (problems.length > 0) refuseAll(problems);
     const teams = await this.gql<{ teams: { nodes: { id: string; key: string }[] } }>(
@@ -1905,6 +1975,21 @@ export class StrictLinear {
     if (!team) throw new Error(`No team with key "${args.team}". list_teams gives the keys.`);
 
     const description = args.sections?.length ? applySectionPatches('', args.sections) : undefined;
+
+    // Whether a visitor will notice this, decided now by whoever knows the work. The agents' own team
+    // holds nothing a visitor sees, so it defaults to none there; everywhere else it is required.
+    const releaseNotePair = await this.releaseNoteLabels(team.id);
+    let releaseNote: ReleaseNote | undefined;
+    if (releaseNotePair) {
+      releaseNote =
+        releaseNoteGiven ??
+        (team.key.toUpperCase() === this.teamRouting?.fleetTeam ? 'none' : undefined);
+      if (releaseNote === undefined && args.release_note === undefined) {
+        problems.push(
+          `release_note is required on ${team.key}: say whether a visitor to production will notice this once it ships. ${RELEASE_NOTE_RUBRIC}`,
+        );
+      }
+    }
 
     // An agent's own work goes on the fleet team; a product team holds what a person would notice.
     let routeVerdict: RouteVerdict | undefined;
@@ -1968,6 +2053,7 @@ export class StrictLinear {
       ...(description !== undefined ? { description } : {}),
       ...(projectId ? { projectId } : {}),
       ...(parentId ? { parentId } : {}),
+      ...(releaseNotePair && releaseNote ? { labelIds: [releaseNotePair.ids[releaseNote]] } : {}),
     };
     const data = await this.gql<{
       issueCreate: {
@@ -2031,6 +2117,14 @@ export class StrictLinear {
       ...(overlapNote ? { overlap_note: overlapNote } : {}),
       ...(home.inherited ? { project: home.inherited } : {}),
       ...(home.note ? { home_note: home.note } : {}),
+      ...(releaseNotePair && releaseNote
+        ? { release_note: releaseNote }
+        : releaseNoteGiven
+          ? {
+              release_note_unset:
+                'this workspace has no release-note labels, so release_note was not recorded',
+            }
+          : {}),
       your_unclaimed: yourUnclaimed,
     };
   }

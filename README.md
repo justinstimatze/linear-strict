@@ -25,6 +25,7 @@ Linear keeps full history, yet agents working from it drift:
 - **Writes name what they were written against.** `get_issue` returns a hash of the description, `description_sha`. A patch passes it as `base` and is refused, with what changed, if the description moved since that read. Linear has no conditional update, so this is how a patch shows it was built from the current text.
 - **Claim, then a Done gate.** `claim` records the description as it stands. Moving to a completed state needs a `Done when` section with every item ticked and cited (`- [x] item · <SHA, PR, file:line, link, CI run, Observed 2, or a command and its result>`), any cited PR that is linked to the ticket merged, and your claim, and is refused with a diff if the description changed since then. Priority or label changes don't count. Dropping an unticked item needs a reason and a yes from the person at the client, or from a model judge in unattended sessions.
 - **Shipped-state facts.** A ticket marked Done or Merged with no linked pull request, or with PRs merged only into a non-main branch, gets a finding. The facts come from Linear's GitHub attachment metadata.
+- **A release-note label on every ticket.** Where the workspace has the labels `release-note` and `release-note-none`, `create_issue` needs `release_note` (`yes` or `none`) and records it as one of them, and `get_issue` flags a ticket that carries neither. The agents' own team defaults to `none`. Whoever writes the ticket decides once whether a visitor will notice it, so a release note is assembled from tickets already sorted, the way Kubernetes' `release-note-none` works, instead of a model ranking every shipped ticket at release time. `set_fields` changes it with `release_note`.
 - **A hands-off label.** A ticket labelled `no-agents` (configurable) is people-only: every write through this server is refused, and reads still work.
 - **Authorship.** An agent (app) token writes as the agent. A personal key writes comments headed `🤖 <agent> via <person>`. Each comment on a read is marked `agent` or `person`, with the basis for that call.
 
@@ -132,6 +133,7 @@ The flow uses PKCE, so a client secret is optional. `auth status` shows whether 
 | `LINEAR_OAUTH_ACCESS_TOKEN` | — | Any OAuth access token, sent as Bearer |
 | `LINEAR_STRICT_MAIN_BRANCH` | `main` | Branch a PR must merge into for Done to count as shipped |
 | `LINEAR_STRICT_PRODUCTION_ENV` | `production` | Environment named in `posthog-<env>:` flag labels that counts as live |
+| `LINEAR_STRICT_RELEASE_NOTE_LABELS` | `release-note,release-note-none` | The label pair `release_note` writes, yes first; `off` turns it off. It takes effect only on a team where both labels exist |
 | `LINEAR_STRICT_HANDS_OFF_LABELS` | `no-agents` | Comma-separated labels that make a ticket people-only: every write through this server is refused, reads still work |
 | `LINEAR_STRICT_SIGN_OFF` | `person` | Who approves dropping an unticked `Done when` item: `person` or `judge` ([Sign-off](#sign-off)) |
 | `LINEAR_STRICT_JUDGE_MODEL` | `claude-opus-5-5` | The model that decides when `LINEAR_STRICT_SIGN_OFF=judge` |
