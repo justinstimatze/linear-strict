@@ -5,6 +5,7 @@ import { COMMENT_KINDS, type CommentKind } from './comment-rules.js';
 import type { Accounting } from './reconcile.js';
 import type { StrictLinear } from './strict-linear.js';
 import { CYCLE_WHEN, type CycleWhen } from './workspace.js';
+import { releaseNoteArg } from './release-note.js';
 
 /**
  * MCP tool behavior hints. All four are required so every tool ships an
@@ -517,7 +518,7 @@ export const strictToolDefinitions: MCPToolDefinition[] = [
   {
     name: 'set_fields',
     description:
-      "Change a ticket's fields other than its content: title, priority, assignee or delegate, labels, cycle, project, milestone, parent, due date, estimate, relations to other tickets, and linked GitHub pull requests. The description changes only through set_state and the workflow state only through set_status. Names are resolved to ids first and the whole call is refused if any is unknown or ambiguous, so nothing is half-applied. Taking a ticket from its current assignee needs take_over; another agent's ticket is refused, and so is one delegated to someone else unless it is assigned to the human this identity acts for (LINEAR_PRINCIPAL_ID): then take_over moves the delegation and a comment records it.",
+      "Change a ticket's fields other than its content: title, priority, assignee or delegate, labels (release_note sets the release-note pair), cycle, project, milestone, parent, due date, estimate, relations to other tickets, and linked GitHub pull requests. The description changes only through set_state and the workflow state only through set_status. Names are resolved to ids first and the whole call is refused if any is unknown or ambiguous, so nothing is half-applied. Taking a ticket from its current assignee needs take_over; another agent's ticket is refused, and so is one delegated to someone else unless it is assigned to the human this identity acts for (LINEAR_PRINCIPAL_ID): then take_over moves the delegation and a comment records it.",
     input_schema: {
       type: 'object',
       properties: {
@@ -543,6 +544,12 @@ export const strictToolDefinitions: MCPToolDefinition[] = [
           description: 'Label names on the team or workspace. Labels are not created here.',
         },
         remove_labels: { type: 'array', items: { type: 'string' } },
+        release_note: {
+          type: 'string',
+          enum: ['yes', 'none'],
+          description:
+            "Whether a visitor to production will notice this once it ships, set as the release-note label pair; it decides whether the ticket's Impact line reaches the release notes. yes: they can do something new, see changed behaviour or copy, stop hitting a bug they could hit, or lose something they used. none: CI, tests, specs, gates, hooks, agent tooling, ticket bookkeeping, refactors, monitoring, team docs, staff-only tools, or a fix for something that never reached production. A flag-gated feature is yes: the note checks the flag when it is drafted.",
+        },
         cycle: {
           type: ['integer', 'string', 'null'],
           description: 'Cycle number, "current", "next", or null to remove it from its cycle',
@@ -586,7 +593,7 @@ export const strictToolDefinitions: MCPToolDefinition[] = [
   {
     name: 'create_issue',
     description:
-      "Create a ticket. Before filing, ask whether the work is part of a ticket that already exists: widening that ticket, or filing under it with parent, keeps one change in one place. A new ticket needs a home, parent or project_id, and ends up in a project: a sub-ticket goes in its parent's, and a parent with no project is refused until it has one. A team with no open projects is exempt. Without a parent, the server finds the team's open tickets closest to this one and refuses until you've placed the work: under one of them (parent), into one of them (widen it and file nothing), or apart from all of them (new_because and distinct_from). The result lists what you filed on this team that no agent has taken up; filing a ticket is not doing the work, so see each into a queue. Its description is built from named sections (Observed, Cause, Fix, Done when), checked the same way set_state checks them. Include a Done when section if the ticket will be closed through set_status.",
+      "Create a ticket. Before filing, ask whether the work is part of a ticket that already exists: widening that ticket, or filing under it with parent, keeps one change in one place. A new ticket needs a home, parent or project_id, and ends up in a project: a sub-ticket goes in its parent's, and a parent with no project is refused until it has one. A team with no open projects is exempt. Without a parent, the server finds the team's open tickets closest to this one and refuses until you've placed the work: under one of them (parent), into one of them (widen it and file nothing), or apart from all of them (new_because and distinct_from). The result lists what you filed on this team that no agent has taken up; filing a ticket is not doing the work, so see each into a queue. Its description is built from named sections (Observed, Cause, Fix, Done when), checked the same way set_state checks them. Include a Done when section if the ticket will be closed through set_status. Where the workspace has the release-note label pair, release_note is required, except on the agents' own team, where it defaults to none.",
     input_schema: {
       type: 'object',
       properties: {
@@ -612,6 +619,12 @@ export const strictToolDefinitions: MCPToolDefinition[] = [
           items: { type: 'string' },
           description:
             'Each close open ticket the server named, by identifier, that this one is separate from.',
+        },
+        release_note: {
+          type: 'string',
+          enum: ['yes', 'none'],
+          description:
+            "Whether a visitor to production will notice this once it ships; it decides whether the ticket's Impact line reaches the release notes. yes: they can do something new, see changed behaviour or copy, stop hitting a bug they could hit, or lose something they used. none: CI, tests, specs, gates, hooks, agent tooling, ticket bookkeeping, refactors, monitoring, team docs, staff-only tools, or a fix for something that never reached production. A flag-gated feature is yes: the note checks the flag when it is drafted.",
         },
         noticed_by: {
           type: 'string',
@@ -755,6 +768,7 @@ function fieldChanges(args: Args): FieldChanges {
     take_over: bool(args, 'take_over'),
     add_labels: strings(args, 'add_labels'),
     remove_labels: strings(args, 'remove_labels'),
+    release_note: releaseNoteArg(args['release_note']),
     cycle: cycleArg(args),
     project: clearable(args, 'project', opt),
     milestone: clearable(args, 'milestone', opt),
@@ -903,6 +917,7 @@ export function strictToolHandlers(
         new_because: opt(args, 'new_because'),
         distinct_from: strings(args, 'distinct_from'),
         noticed_by: opt(args, 'noticed_by'),
+        release_note: releaseNoteArg(args['release_note']),
       }),
     ),
   };
