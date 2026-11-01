@@ -398,6 +398,12 @@ export function fakeGql(state: FakeState): Gql {
       }
       case 'StrictTeamLabels':
         return { issueLabels: page(state.labels, variables) };
+      case 'StrictReleaseNoteLabels': {
+        const names = variables['names'] as string[];
+        return {
+          issueLabels: { nodes: state.labels.filter((label) => names.includes(label.name)) },
+        };
+      }
       case 'StrictTeamCycles': {
         const filter = variables['filter'] as Filter;
         const nodes = state.cycles.filter(
