@@ -1612,11 +1612,16 @@ export class StrictLinear {
           `release_note needs the labels "${this.releaseNotePair?.yes ?? 'release-note'}" and "${this.releaseNotePair?.none ?? 'release-note-none'}" on ${issue.team?.key ?? 'this team'} or the workspace, and they are not both there. Labels are not created here.`,
         );
       }
+      // Linear refuses to remove a label the ticket lacks, so only what it carries is touched.
       const { add, remove } = releaseNoteLabelChanges(changes.release_note, pair);
+      const carried = (await this.core(issue.id)).labels.nodes.map((label) =>
+        label.name.toLowerCase(),
+      );
+      const has = (name: string) => carried.includes(name.toLowerCase());
       changes = {
         ...changes,
-        add_labels: [...(changes.add_labels ?? []), add],
-        remove_labels: [...(changes.remove_labels ?? []), remove],
+        add_labels: [...(changes.add_labels ?? []), ...(has(add) ? [] : [add])],
+        remove_labels: [...(changes.remove_labels ?? []), ...(has(remove) ? [remove] : [])],
       };
     }
     const { input, changed, relations, pullRequests, delegateTakenFrom } = await resolveFields(

@@ -80,8 +80,15 @@ describe('release_note on create_issue', () => {
 describe('release_note on set_fields', () => {
   it('adds the chosen label and removes the other in the same update', async () => {
     const { state, strict } = setup();
+    state.issue.labels = ['release-note'];
     await strict.setFields('ENG-1', { release_note: 'none' });
     expect(state.updates).toEqual([{ addedLabelIds: ['l-rn-none'], removedLabelIds: ['l-rn'] }]);
+  });
+
+  it('removes nothing the ticket lacks, since Linear refuses that, and adds nothing it has', async () => {
+    const { state, strict } = setup();
+    await strict.setFields('ENG-1', { release_note: 'yes' });
+    expect(state.updates).toEqual([{ addedLabelIds: ['l-rn'] }]);
   });
 
   it('refuses, naming both labels, where the workspace lacks them', async () => {
