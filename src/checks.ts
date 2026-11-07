@@ -157,8 +157,19 @@ function readImpactLine(description: string): string | null {
   return /(?:^|\n)\W*Impact:[ \t]*(.*)/i.exec(description)?.[1]?.trim() || null;
 }
 
-/** Only an Impact that begins "none" can say the work reached nobody. */
-const saysNone = (impact: string) => /^\W*none\b/i.test(impact);
+/**
+ * Only an Impact whose first word is exactly "none", ended by the line or by ":", "," or ".", says the
+ * work reached nobody. "none of the visitors can lose their history" is a claim like any other.
+ */
+const saysNone = (impact: string) => /^\W*none(?=$|[:,.])/i.test(impact);
+
+/**
+ * Text without default-ignorable code points (soft hyphen, zero-width space and joiners, word joiner,
+ * BOM and the rest of Unicode's set). They do not show when the text is displayed, so a word broken by
+ * one reads whole, and must be read whole: otherwise its fragments fall under min_word_length and no
+ * quote has to cover them.
+ */
+const visible = (s: string) => s.replace(/\p{Default_Ignorable_Code_Point}/gu, '');
 
 /** Case and punctuation dropped: every run of non-letters and non-digits becomes one space. */
 const normalised = (s: string) =>
@@ -177,7 +188,7 @@ export function checksInterpreter(rb: ChecksRulebook): ChecksModule {
     impactLine: readImpactLine,
 
     parseChecks(description) {
-      const lines = sectionOf(asWritten(description), rb.section);
+      const lines = writtenSection(description, rb.section);
       if (lines === null) return null;
       if (typeof lines === 'string') return { checks: [], problems: [lines] };
       const checks: Check[] = [];
@@ -217,12 +228,13 @@ export function checksInterpreter(rb: ChecksRulebook): ChecksModule {
     },
 
     // A quote must appear in the Impact once both are normalised, and every content word of the
-    // Impact (min_word_length or more characters, not a stopword) must lie inside some quote. An
-    // Impact that begins "none" exempts only that opening clause: everything after its first colon
-    // is still a claim, and with no colon it claims nothing.
+    // Impact (min_word_length or more characters, not a stopword) must lie inside some quote. Both are
+    // read without default-ignorable code points. An Impact that says none (saysNone) exempts only
+    // that opening clause: everything after its first colon is still a claim, and with no colon it
+    // claims nothing.
     impactCoverage(line, checks) {
       if (!line) return { misquoted: [], uncovered: [] };
-      const impact = unprefixed(line);
+      const impact = unprefixed(visible(line));
       const claimed = saysNone(impact)
         ? impact.includes(':')
           ? impact.slice(impact.indexOf(':') + 1)
@@ -234,7 +246,7 @@ export function checksInterpreter(rb: ChecksRulebook): ChecksModule {
       const misquoted: { id: string; quote: string }[] = [];
       for (const c of checks)
         for (const quote of c.quotes) {
-          const q = normalised(unprefixed(quote));
+          const q = normalised(unprefixed(visible(quote)));
           // Whole words only: "cap" must not cover the start of "capacity".
           const re = q
             ? new RegExp(
@@ -343,11 +355,22 @@ export function asWritten(description: string): string {
     .join('\n');
 }
 
+/**
+ * The section's lines, its span found on the description as stored, so a line is a boundary or a
+ * heading here exactly when it is one for readSection; asWritten then applies to the body alone. An
+ * escaped marker (`<!-- a\_b:begin -->`) is no boundary for readSection, so it is none here either,
+ * and the check line that carries it is read, and refused, like any other line.
+ */
+function writtenSection(description: string, heading: string): string[] | string | null {
+  const lines = sectionOf(description, heading);
+  return Array.isArray(lines) ? asWritten(lines.join('\n')).split('\n') : lines;
+}
+
 const idNumber = (id: string) => Number(id.slice(1));
 
 /** The ## Checks section's lines in the form they were written in, over the span parseChecks reads. */
 const checksLines = (m: ChecksModule, description: string) => {
-  const lines = sectionOf(asWritten(description), m.section);
+  const lines = writtenSection(description, m.section);
   return typeof lines === 'string' ? null : lines;
 };
 
@@ -447,6 +470,7 @@ export function checksWriteProblems(
     sectionText(before) === sectionText(after) && m.impactLine(before) === m.impactLine(after);
   const known = new Set(untouched ? contentProblems(m, before) : []);
   const problems = contentProblems(m, after).filter((p) => !known.has(p));
+  if (hasSection(after, 'Done when') && hasSection(after, 'Checks')) problems.push(BOTH_SECTIONS);
   problems.push(...tickProblems(m, before, after));
   const used = new Set([before, ...earlier].flatMap((text) => [...checksById(m, text).keys()]));
   const highest = Math.max(0, ...[...used].map(idNumber));
@@ -462,6 +486,9 @@ export function checksWriteProblems(
   }
   return problems;
 }
+
+export const BOTH_SECTIONS =
+  'Checks: a ticket holds ## Done when or ## Checks, never both, since only one of them is graded. Remove ## Done when (replace it with an empty body) in this same write, so every item it drops moves into a check or goes to sign-off.';
 
 export const TICKED_BY_GRADER =
   'checks are ticked by the grader that reads their evidence, not by hand';

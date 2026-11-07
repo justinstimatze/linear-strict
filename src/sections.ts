@@ -72,6 +72,7 @@ export interface SectionPatch {
 
 const HEADING = /^(#{1,6})\s+(.+?)\s*#*\s*$/;
 const FENCE = /^\s*(```|~~~)/;
+const CHECKS_HEADING = /^#{1,6}\s+checks\s*#*\s*$/i;
 /** Tool-written lines that end the section above them: a generated block, or the reconciled marker. */
 export const BOUNDARY = /<!--\s*(?:[\w.-]+:begin\s*|strict:reconciled\b[^>]*)-->/;
 const GENERATED_ANY = /<!--\s*[\w.-]+:(begin|end)\s*-->/;
@@ -222,6 +223,11 @@ export function validateSectionBody(section: SectionName, body: string): string[
     if (HEADING.test(line)) {
       errors.push(
         `${section}: body contains a heading ("${line.trim()}"), which would split the section`,
+      );
+    } else if (CHECKS_HEADING.test(line.trimStart())) {
+      // trimStart drops NBSP and BOM too. Linear may store an indented heading at column 0.
+      errors.push(
+        `${section}: body contains a "${line.trim()}" line behind leading whitespace, which Linear may store as a heading`,
       );
     }
   }

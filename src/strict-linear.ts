@@ -929,7 +929,7 @@ export class StrictLinear {
    */
   private async versionTexts(id: string): Promise<string[]> {
     const { versions, success } = await this.descriptionVersions(id);
-    if (versions === null)
+    if (versions === null || versions.length === 0)
       throw new Error(
         `Nothing was written: Linear returned no document history for this ticket, so whether a check id was used and retired before can't be read, and adding one could reissue a retired id. Edits to checks already there still land.`,
       );
