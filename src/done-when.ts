@@ -29,17 +29,27 @@ export const WAS_TICKED = ' (already ticked)';
  * and it is returned marked as already ticked.
  */
 export function droppedChecks(before: string, after: string): string[] {
+  return doneWhenDropped(before, after).map((d) => d.shown);
+}
+
+/**
+ * droppedChecks with each item's own text kept apart from the form it is shown in, so a reader that
+ * matches an item's text never strips a WAS_TICKED suffix that the item's own text may end in.
+ */
+export function doneWhenDropped(before: string, after: string): { item: string; shown: string }[] {
   const kept = doneWhenItems(after, CHECK_ITEM);
   const survives = (item: string) =>
     kept.some(
       (line) =>
         line === item || (line.startsWith(item) && /^[\s,;:.(—-]/.test(line.slice(item.length))),
     );
-  const unticked = doneWhenItems(before, UNTICKED).filter((item) => !survives(item));
+  const unticked = doneWhenItems(before, UNTICKED)
+    .filter((item) => !survives(item))
+    .map((item) => ({ item, shown: item }));
   const ticked = doneWhenItems(before, TICKED_ITEM)
     .map((item) => item.split(CITATION)[0]?.trim() ?? item)
     .filter((item) => !survives(item))
-    .map((item) => `${item}${WAS_TICKED}`);
+    .map((item) => ({ item, shown: `${item}${WAS_TICKED}` }));
   return [...unticked, ...ticked];
 }
 

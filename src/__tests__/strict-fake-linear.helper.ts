@@ -85,6 +85,8 @@ export interface FakeState {
   otherComments: { issueId: string; body: string }[];
   /** Description snapshots, oldest first; the fake serves them newest first. null: the ticket has no document. */
   snapshots: { at: string; actorIds: string[]; doc: PmNode }[] | null;
+  /** Linear says it could not return the whole history. */
+  historyIncomplete?: boolean;
   /** What semanticSearch returns for any query, most relevant first; 'fail' makes it throw. */
   closeTickets: { identifier: string; title: string; state: string }[] | 'fail';
   /** What searchIssues returns for any term; 'fail' makes it throw. */
@@ -343,7 +345,7 @@ export function fakeGql(state: FakeState): Gql {
       case 'StrictContentHistory':
         return {
           documentContentHistory: {
-            success: true,
+            success: !state.historyIncomplete,
             history: [...(state.snapshots ?? [])].reverse().map((snapshot) => ({
               contentDataSnapshotAt: snapshot.at,
               actorIds: snapshot.actorIds,
