@@ -16,7 +16,9 @@ import {
   addQuestion,
   answerQuestion,
   applySectionPatches,
+  CHECKS_PATCHABLE_SECTIONS,
   commentKind,
+  PATCHABLE_SECTIONS,
   lintForState,
   citedPullRequestNumbers,
   uncitedTicks,
@@ -680,7 +682,11 @@ export class StrictLinear {
       attachments: otherAttachments(attachments.nodes, prs),
       claim: claim ? this.claimStatus(claim, description) : null,
       findings: [
-        ...lintForState(description, issue.state?.type ?? null),
+        ...lintForState(
+          description,
+          issue.state?.type ?? null,
+          checksApply(this.checks, issue.team?.key) !== undefined,
+        ),
         ...shippedStateFindings(issue.state, prs, this.mainBranch, {
           labels: issue.labels.nodes.map((label) => label.name),
           releases: issue.releases?.nodes ?? [],
@@ -850,11 +856,11 @@ export class StrictLinear {
   }
 
   /**
-   * The description's past versions, from the snapshots Linear saves as it is
-   * edited: who made each one and what it changed. With blame, each line of the
-   * current description names the version that introduced it.
+   * Every saved version of the description, each with its whole text (the history tool shows later
+   * versions as diffs, but the text is rebuilt here from each snapshot). versions is null when Linear
+   * keeps no document history for the ticket.
    */
-  async descriptionHistory(id: string, options: { blame?: boolean | undefined } = {}) {
+  private async descriptionVersions(id: string) {
     const data = await this.gql<{
       issue: {
         id: string;
@@ -869,16 +875,8 @@ export class StrictLinear {
       );
     const { issue } = data;
     const description = issue.description ?? '';
-    if (!issue.documentContent) {
-      return {
-        issue: issue.identifier,
-        versions: [],
-        current: { in_a_version: false },
-        omitted: [
-          { field: 'versions', reason: 'Linear keeps no document history for this ticket' },
-        ],
-      };
-    }
+    if (!issue.documentContent)
+      return { issue, description, versions: null, unrendered: new Set<string>(), success: true };
 
     const history = await this.gql<{
       documentContentHistory: {
@@ -912,6 +910,45 @@ export class StrictLinear {
         by: snapshot.actorIds.map((actor) => names.get(actor) ?? actor),
         text: rendered.markdown,
       });
+    }
+    return {
+      issue,
+      description,
+      versions,
+      unrendered,
+      success: history.documentContentHistory.success,
+    };
+  }
+
+  /**
+   * The whole text of every saved version of the description, for a rule that must see every id a
+   * ticket ever had. A history Linear says it could not read fully refuses rather than reads as empty.
+   */
+  private async versionTexts(id: string): Promise<string[]> {
+    const { versions, success } = await this.descriptionVersions(id);
+    if (!success)
+      throw new Error(
+        `Nothing was written: Linear did not return the description's whole history, which is read to tell whether a check id was used before. Retry.`,
+      );
+    return (versions ?? []).map((version) => version.text);
+  }
+
+  /**
+   * The description's past versions, from the snapshots Linear saves as it is
+   * edited: who made each one and what it changed. With blame, each line of the
+   * current description names the version that introduced it.
+   */
+  async descriptionHistory(id: string, options: { blame?: boolean | undefined } = {}) {
+    const { issue, description, versions, unrendered } = await this.descriptionVersions(id);
+    if (versions === null) {
+      return {
+        issue: issue.identifier,
+        versions: [],
+        current: { in_a_version: false },
+        omitted: [
+          { field: 'versions', reason: 'Linear keeps no document history for this ticket' },
+        ],
+      };
     }
 
     const latest = versions.at(-1);
@@ -1222,7 +1259,7 @@ export class StrictLinear {
       throw new Error('accounts_for only applies with reconciled_through');
     const issue = await this.writable(id);
     this.checkBase(issue, base);
-    const next = applySectionPatches(issue.description ?? '', patches);
+    const next = applySectionPatches(issue.description ?? '', patches, this.patchable(issue));
     await this.checkChecks(issue, issue.description ?? '', next);
 
     const reconciled = reconciledThrough
@@ -1395,7 +1432,7 @@ export class StrictLinear {
     const checks = checksApply(this.checks, issue.team?.key);
     const dropped = checks
       ? [
-          ...notMigrated(checks, next, droppedChecks(before, next)),
+          ...notMigrated(checks, before, next, droppedChecks(before, next)),
           ...droppedChecksById(checks, before, next),
         ]
       : droppedChecks(before, next);
@@ -1424,6 +1461,13 @@ export class StrictLinear {
     return { dropped, note: answer.note, signer: answer.signer ?? 'person', model: answer.model };
   }
 
+  /** The sections a write may patch: Checks only on a team that uses one. */
+  private patchable(issue: IssueCore) {
+    return checksApply(this.checks, issue.team?.key)
+      ? CHECKS_PATCHABLE_SECTIONS
+      : PATCHABLE_SECTIONS;
+  }
+
   /**
    * Refuses a write whose ## Checks section the project's checks module can't read, whose Impact
    * claims no check cites, or that issues an id the ticket had before. Earlier versions are read only
@@ -1432,12 +1476,7 @@ export class StrictLinear {
   private async checkChecks(issue: IssueCore, before: string, next: string) {
     const m = checksApply(this.checks, issue.team?.key);
     if (!m) return;
-    const earlier =
-      newIds(m, before, next).length > 0
-        ? (await this.descriptionHistory(issue.id)).versions
-            .map((v) => v.text)
-            .filter((text): text is string => text !== undefined)
-        : [];
+    const earlier = newIds(m, before, next).length > 0 ? await this.versionTexts(issue.id) : [];
     const problems = checksWriteProblems(m, before, next, earlier);
     if (problems.length === 1) throw new Error(problems[0]);
     if (problems.length > 1)
@@ -1480,7 +1519,7 @@ export class StrictLinear {
     // Validate everything before the first write, so a refusal writes nothing.
     let description = issue.description ?? '';
     if (patch.length > 0) {
-      description = applySectionPatches(description, patch);
+      description = applySectionPatches(description, patch, this.patchable(issue));
       await this.checkChecks(issue, issue.description ?? '', description);
       await this.checkDescope(issue, description, undefined, 'comment');
     }
@@ -1588,7 +1627,11 @@ export class StrictLinear {
       const line = `Closed by ${closedBy.identifier} (${relation === 'duplicate' ? 'duplicate' : 'fixed there'}) on ${date} · [comment](${comment.url})`;
       await this.writeDescription(
         issue,
-        applySectionPatches(description, [{ section: 'Fix', mode: 'append', body: line }]),
+        applySectionPatches(
+          description,
+          [{ section: 'Fix', mode: 'append', body: line }],
+          this.patchable(issue),
+        ),
       );
       steps.push('description');
     } catch (error) {
@@ -2028,7 +2071,13 @@ export class StrictLinear {
     const team = teams.teams.nodes[0];
     if (!team) throw new Error(`No team with key "${args.team}". list_teams gives the keys.`);
 
-    const description = args.sections?.length ? applySectionPatches('', args.sections) : undefined;
+    const description = args.sections?.length
+      ? applySectionPatches(
+          '',
+          args.sections,
+          checksApply(this.checks, team.key) ? CHECKS_PATCHABLE_SECTIONS : PATCHABLE_SECTIONS,
+        )
+      : undefined;
     if (description !== undefined) {
       const m = checksApply(this.checks, team.key);
       if (m) problems.push(...checksWriteProblems(m, '', description));

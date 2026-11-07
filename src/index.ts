@@ -25,7 +25,7 @@ import { defaultStateDir, fileSignOffStore } from './sign-off-store.js';
 import { guardInstance } from './single-instance.js';
 import { releaseNoteLabelsFromEnv } from './release-note.js';
 import { type SignOffRequest, StrictLinear } from './strict-linear.js';
-import { strictToolDefinitions, strictToolHandlers } from './tools.js';
+import { strictToolHandlers, toolDefinitionsFor } from './tools.js';
 
 async function main(): Promise<void> {
   const auth = resolveLinearAuth();
@@ -73,8 +73,9 @@ async function main(): Promise<void> {
     );
   }
   const teamRouting = teamRoutingFromEnv(process.env, routeReader);
-  // Teams whose tickets carry ## Checks, read by the project's own checks module; a module that
-  // won't load stops the server here rather than letting it write ## Checks unchecked.
+  // Teams whose tickets carry ## Checks, read by the project's own checks module. It is loaded once,
+  // here: a module that won't load stops the server rather than letting it write ## Checks unchecked,
+  // and a change to the module or its rulebook takes effect at the next restart.
   const checks = await checksRulesFromEnv(process.env);
   // One StrictLinear per access token, so its viewer lookup is cached until a
   // refresh rotates the token.
@@ -127,7 +128,7 @@ async function main(): Promise<void> {
       name: 'linear-strict',
       version: pkg.version,
       instructions: STRICT_INSTRUCTIONS,
-      tools: strictToolDefinitions,
+      tools: toolDefinitionsFor(checks !== undefined),
       call: async (name, args) => {
         lastCallAt = Date.now();
         const handler = (await handlers.get())[name];

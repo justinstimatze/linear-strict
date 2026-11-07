@@ -20,8 +20,16 @@ export const SECTION_ORDER = [
 ] as const;
 export type SectionName = (typeof SECTION_ORDER)[number];
 
+/** The sections a ticket on a team that does not use ## Checks has: Checks is not one of them. */
+const WITHOUT_CHECKS: readonly SectionName[] = SECTION_ORDER.filter((name) => name !== 'Checks');
+const sectionOrder = (checks: boolean): readonly SectionName[] =>
+  checks ? SECTION_ORDER : WITHOUT_CHECKS;
+
 /** Sections set_state may write. Open questions changes only through ask/answer comments. */
-export const PATCHABLE_SECTIONS: readonly SectionName[] = [
+export const PATCHABLE_SECTIONS: readonly SectionName[] = ['Observed', 'Cause', 'Fix', 'Done when'];
+
+/** The same, on a team whose tickets carry ## Checks (checks.ts). */
+export const CHECKS_PATCHABLE_SECTIONS: readonly SectionName[] = [
   'Observed',
   'Cause',
   'Fix',
@@ -118,9 +126,9 @@ function scanHeadings(lines: string[]): Heading[] {
   return headings;
 }
 
-function canonicalName(name: string): SectionName | null {
+function canonicalName(name: string, checks: boolean): SectionName | null {
   const wanted = name.trim().toLowerCase();
-  return SECTION_ORDER.find((section) => section.toLowerCase() === wanted) ?? null;
+  return sectionOrder(checks).find((section) => section.toLowerCase() === wanted) ?? null;
 }
 
 function findSection(lines: string[], name: SectionName): SectionSpan | null {
@@ -224,12 +232,14 @@ export function validateSectionBody(section: SectionName, body: string): string[
 /**
  * Validates every patch and applies them in order. Throws with all
  * validation errors at once, so a caller fixes everything in one round.
+ * Checks is a section only when `allowed` names it, i.e. on a team that uses one.
  */
 export function applySectionPatches(
   description: string,
   patches: SectionPatch[],
   allowed: readonly SectionName[] = PATCHABLE_SECTIONS,
 ): string {
+  const checks = allowed.includes('Checks');
   const errors: string[] = [];
   const resolved: {
     name: SectionName | typeof IMPACT;
@@ -243,10 +253,10 @@ export function applySectionPatches(
       resolved.push({ name: IMPACT, mode: patch.mode, body: patch.body });
       continue;
     }
-    const name = canonicalName(patch.section);
+    const name = canonicalName(patch.section, checks);
     if (!name) {
       errors.push(
-        `"${patch.section}" is not a known section (${[IMPACT, ...SECTION_ORDER].join(', ')})`,
+        `"${patch.section}" is not a known section (${[IMPACT, ...sectionOrder(checks)].join(', ')})`,
       );
       continue;
     }
@@ -259,7 +269,7 @@ export function applySectionPatches(
       continue;
     }
     // Emptying Done when removes it, for a ticket whose checks moved to ## Checks (checked below).
-    if (name === 'Done when' && patch.mode === 'replace' && patch.body.trim() === '') {
+    if (checks && name === 'Done when' && patch.mode === 'replace' && patch.body.trim() === '') {
       resolved.push({ name, mode: 'remove', body: '' });
       continue;
     }
@@ -276,7 +286,7 @@ export function applySectionPatches(
         ? setImpactLine(result, patch.body)
         : patch.mode === 'remove'
           ? removeSection(result, patch.name)
-          : patchSection(result, patch.name, patch.mode, patch.body);
+          : patchSection(result, patch.name, patch.mode, patch.body, checks);
   }
   if (resolved.some((p) => p.mode === 'remove') && !sectionExists(splitLines(result), 'Checks'))
     throw new Error(
@@ -303,6 +313,7 @@ export function patchSection(
   name: SectionName,
   mode: PatchMode,
   body: string,
+  checks = false,
 ): string {
   const lines = splitLines(description);
   const span = findSection(lines, name);
@@ -318,7 +329,7 @@ export function patchSection(
     return [...lines.slice(0, span.start), ...replacement, ...after].join('\n');
   }
 
-  return insertSection(lines, name, bodyLines).join('\n');
+  return insertSection(lines, name, bodyLines, checks).join('\n');
 }
 
 // Observed and Done when are lists, and markdown splits a list two ways: a line without a bullet
@@ -332,9 +343,16 @@ function bulleted(bodyLines: string[], existing: string[]): string[] {
   );
 }
 
-function insertSection(lines: string[], name: SectionName, bodyLines: string[]): string[] {
-  const order = SECTION_ORDER.indexOf(name);
-  const later = SECTION_ORDER.slice(order + 1)
+function insertSection(
+  lines: string[],
+  name: SectionName,
+  bodyLines: string[],
+  checks: boolean,
+): string[] {
+  const sections = sectionOrder(checks);
+  const order = sections.indexOf(name);
+  const later = sections
+    .slice(order + 1)
     .map((section) => findSection(lines, section))
     .filter((span): span is SectionSpan => span !== null)
     .sort((a, b) => a.headingLine - b.headingLine)[0];
@@ -347,7 +365,8 @@ function insertSection(lines: string[], name: SectionName, bodyLines: string[]):
   } else {
     const generated = lines.findIndex((line) => BOUNDARY.test(line));
     at = generated === -1 ? lines.length : generated;
-    const earlier = SECTION_ORDER.slice(0, order)
+    const earlier = sections
+      .slice(0, order)
       .map((section) => findSection(lines, section))
       .find((span): span is SectionSpan => span !== null);
     if (earlier) level = earlier.level;
@@ -429,8 +448,12 @@ export interface Finding {
  * gets one finding saying what to add before claiming or closing it, not one
  * per missing section on every read.
  */
-export function lintForState(description: string, stateType: string | null): Finding[] {
-  const findings = lintDescription(description);
+export function lintForState(
+  description: string,
+  stateType: string | null,
+  checks = false,
+): Finding[] {
+  const findings = lintDescription(description, checks);
   const missing = findings.filter((finding) => finding.code === 'missing_section');
   const rest = findings.filter((finding) => finding.code !== 'missing_section');
   if (stateType === 'completed' || stateType === 'canceled' || stateType === 'duplicate')
@@ -456,11 +479,12 @@ function sectionExists(lines: string[], name: SectionName): boolean {
   }
 }
 
-export function lintDescription(description: string): Finding[] {
+/** `checks`: the ticket's team uses ## Checks, which then stands in for Done when. */
+export function lintDescription(description: string, checks = false): Finding[] {
   const findings: Finding[] = [];
   const lines = splitLines(description);
 
-  for (const name of SECTION_ORDER) {
+  for (const name of sectionOrder(checks)) {
     let span: SectionSpan | null;
     try {
       span = findSection(lines, name);
@@ -470,7 +494,7 @@ export function lintDescription(description: string): Finding[] {
     }
     if (!span) {
       // A ## Checks section stands in for Done when on the teams that use one.
-      const replaced = name === 'Done when' && sectionExists(lines, 'Checks');
+      const replaced = checks && name === 'Done when' && sectionExists(lines, 'Checks');
       if ((name === 'Observed' || name === 'Done when') && !replaced) {
         findings.push({ code: 'missing_section', detail: `No "${name}" section` });
       }
