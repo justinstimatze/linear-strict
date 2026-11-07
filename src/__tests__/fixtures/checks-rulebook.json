@@ -1,0 +1,84 @@
+{
+  "checks": {
+    "section": "## Checks",
+    "line": "^- \\[( |x|X)\\] (C[1-9][0-9]*) · (walk|read|run|fault|telemetry|monitor) ([^·]+?) · (.+?)(?: <!-- (.+) -->)?$",
+    "provenance": {
+      "pattern": "^from (impact \"[^\"]+\"|D[1-9][0-9]*)(; (impact \"[^\"]+\"|D[1-9][0-9]*))*$",
+      "quote_pattern": "impact \"([^\"]+)\""
+    },
+    "kinds": {
+      "walk": {
+        "target": "<host>/<profile>",
+        "target_pattern": "^(alpha|www)/(visitor|staff|signed-out)$"
+      },
+      "read": {
+        "target": "<reader> <args>",
+        "target_pattern": "^[a-z][a-z0-9-]*( [^ ]+)*$"
+      },
+      "run": {
+        "target": "<workflow> <spec file>:<line>",
+        "target_pattern": "^[a-z][a-z0-9-]* [^ ]+\\.(spec|test)\\.[a-z]+:[1-9][0-9]*$"
+      },
+      "fault": {
+        "target": "<fault name> @promote|@preview",
+        "target_pattern": "^[a-z][a-z0-9_]* @(promote|preview)$"
+      },
+      "telemetry": {
+        "target": "<query id> until <YYYY-MM-DD>",
+        "target_pattern": "^[A-Za-z0-9_-]+ until [0-9]{4}-[0-9]{2}-[0-9]{2}$"
+      },
+      "monitor": {
+        "target": "<alert id>",
+        "target_pattern": "^[A-Za-z0-9_.:-]+$"
+      }
+    },
+    "coverage": {
+      "stopwords": [
+        "also",
+        "that",
+        "this",
+        "then",
+        "than",
+        "with",
+        "from",
+        "into",
+        "onto",
+        "when",
+        "what",
+        "which",
+        "while",
+        "where",
+        "their",
+        "there",
+        "they",
+        "them",
+        "have",
+        "has",
+        "been",
+        "were",
+        "will",
+        "would",
+        "could",
+        "should",
+        "does",
+        "done",
+        "each",
+        "some",
+        "only",
+        "just",
+        "more",
+        "most",
+        "other",
+        "such",
+        "very",
+        "about",
+        "after",
+        "before",
+        "over",
+        "under",
+        "your"
+      ],
+      "min_word_length": 4
+    }
+  }
+}

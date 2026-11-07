@@ -1,6 +1,6 @@
 import type { FieldChanges } from './fields.js';
 import type { SectionPatch } from './sections.js';
-import { IMPACT, PATCHABLE_SECTIONS } from './sections.js';
+import { CHECKS_PATCHABLE_SECTIONS, IMPACT, PATCHABLE_SECTIONS } from './sections.js';
 import { COMMENT_KINDS, type CommentKind } from './comment-rules.js';
 import type { Accounting } from './reconcile.js';
 import type { StrictLinear } from './strict-linear.js';
@@ -132,6 +132,19 @@ const PATCH_SCHEMA = {
       body: { type: 'string' },
     },
     required: ['section', 'mode', 'body'],
+  },
+};
+
+// On a server whose LINEAR_STRICT_CHECKS_TEAMS is set, a patch may also name Checks (checks.ts).
+const CHECKS_PATCH_SCHEMA = {
+  ...PATCH_SCHEMA,
+  description: `${PATCH_SCHEMA.description} Checks, on the teams that use one, holds checks with permanent ids ("- [ ] C1 · <kind> <target> · <claim> <!-- from … -->"); emptying Done when removes it once Checks carries its items. A check is written unticked and ticked only by the project's grader, which also closes the ticket; a write here that ticks one is refused.`,
+  items: {
+    ...PATCH_SCHEMA.items,
+    properties: {
+      ...PATCH_SCHEMA.items.properties,
+      section: { type: 'string', enum: [IMPACT, ...CHECKS_PATCHABLE_SECTIONS] },
+    },
   },
 };
 
@@ -921,4 +934,28 @@ export function strictToolHandlers(
       }),
     ),
   };
+}
+
+/**
+ * The tool definitions for a server with or without LINEAR_STRICT_CHECKS_TEAMS: with it, a patch may
+ * name Checks. Without it the definitions are exactly strictToolDefinitions.
+ */
+export function toolDefinitionsFor(checks: boolean): MCPToolDefinition[] {
+  if (!checks) return strictToolDefinitions;
+  return strictToolDefinitions.map((tool) => {
+    const { properties } = tool.input_schema;
+    if (!Object.values(properties).includes(PATCH_SCHEMA)) return tool;
+    return {
+      ...tool,
+      input_schema: {
+        ...tool.input_schema,
+        properties: Object.fromEntries(
+          Object.entries(properties).map(([key, value]) => [
+            key,
+            value === PATCH_SCHEMA ? CHECKS_PATCH_SCHEMA : value,
+          ]),
+        ),
+      },
+    };
+  });
 }

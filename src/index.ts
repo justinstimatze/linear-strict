@@ -18,13 +18,14 @@ import { runInstallCli, signOffHookHealth } from './install.js';
 import { DEFAULT_JUDGE_MODEL, judgeSignOff } from './judge.js';
 import { resolveJudgeKey } from './judge-key.js';
 import { DEFAULT_ROUTE_MODEL, routeJudge, teamRoutingFromEnv, type RouteJudge } from './route.js';
+import { checksRulesFromEnv } from './checks.js';
 import { type OverlapReader, overlapReader } from './overlap-model.js';
 import { type Elicitor, elicitSignOff, previewSignOff } from './sign-off.js';
 import { defaultStateDir, fileSignOffStore } from './sign-off-store.js';
 import { guardInstance } from './single-instance.js';
 import { releaseNoteLabelsFromEnv } from './release-note.js';
 import { type SignOffRequest, StrictLinear } from './strict-linear.js';
-import { strictToolDefinitions, strictToolHandlers } from './tools.js';
+import { strictToolHandlers, toolDefinitionsFor } from './tools.js';
 
 async function main(): Promise<void> {
   const auth = resolveLinearAuth();
@@ -72,6 +73,9 @@ async function main(): Promise<void> {
     );
   }
   const teamRouting = teamRoutingFromEnv(process.env, routeReader);
+  // Teams whose tickets carry ## Checks, read with the project's rulebook. It is read once, here, so
+  // a change to it takes effect at the next restart; a rulebook that won't read leaves Checks off.
+  const checks = checksRulesFromEnv(process.env);
   // One StrictLinear per access token, so its viewer lookup is cached until a
   // refresh rotates the token.
   const handlers = createRefreshingProvider({
@@ -91,6 +95,7 @@ async function main(): Promise<void> {
           signOff,
           overlapReader: readOverlap,
           teamRouting,
+          checks,
           principal:
             principalConfig && principalGql
               ? { gql: principalGql, userId: principalConfig.userId }
@@ -122,7 +127,7 @@ async function main(): Promise<void> {
       name: 'linear-strict',
       version: pkg.version,
       instructions: STRICT_INSTRUCTIONS,
-      tools: strictToolDefinitions,
+      tools: toolDefinitionsFor(checks !== undefined),
       call: async (name, args) => {
         lastCallAt = Date.now();
         const handler = (await handlers.get())[name];
