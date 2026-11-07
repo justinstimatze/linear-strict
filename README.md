@@ -139,6 +139,8 @@ The flow uses PKCE, so a client secret is optional. `auth status` shows whether 
 | `LINEAR_STRICT_JUDGE_MODEL` | `claude-opus-5-5` | The model that decides when `LINEAR_STRICT_SIGN_OFF=judge` |
 | `LINEAR_STRICT_OVERLAP` | `model` | How `create_issue` finds the open tickets a new one overlaps: `model` has `claude-sonnet-5-5` read every open title on the team when a judge key is set, else Linear's searches; `search` always uses the searches |
 | `ANTHROPIC_API_KEY` | — | The judge's key, if not saved with `auth judge-key set` |
+| `LINEAR_STRICT_CHECKS_TEAMS` | — | Comma-separated team keys whose tickets may carry a `## Checks` section of checks with permanent ids. Set with `LINEAR_STRICT_CHECKS_MODULE`, or neither |
+| `LINEAR_STRICT_CHECKS_MODULE` | — | Path to the project's own checks module (`parseChecks`, `impactCoverage`, `impactLine`), which refuses a `## Checks` write it can't read; a module that won't load stops the server at startup |
 | `LINEAR_STRICT_STATE_DIR` | `$XDG_STATE_HOME/linear-strict` | Where claim records and pending sign-offs are kept |
 | `LINEAR_STRICT_CONFIG_DIR` | `$XDG_CONFIG_HOME/linear-strict` | Where `auth login` stores credentials |
 | `LINEAR_STRICT_SINGLE_INSTANCE` | `1` | `0` turns off the check that lets a replaced server exit ([below](#one-server-per-connection)) |

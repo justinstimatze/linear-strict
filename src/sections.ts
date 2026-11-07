@@ -10,11 +10,24 @@
  * never touched here.
  */
 
-export const SECTION_ORDER = ['Observed', 'Cause', 'Fix', 'Done when', 'Open questions'] as const;
+export const SECTION_ORDER = [
+  'Observed',
+  'Cause',
+  'Fix',
+  'Checks',
+  'Done when',
+  'Open questions',
+] as const;
 export type SectionName = (typeof SECTION_ORDER)[number];
 
 /** Sections set_state may write. Open questions changes only through ask/answer comments. */
-export const PATCHABLE_SECTIONS: readonly SectionName[] = ['Observed', 'Cause', 'Fix', 'Done when'];
+export const PATCHABLE_SECTIONS: readonly SectionName[] = [
+  'Observed',
+  'Cause',
+  'Fix',
+  'Checks',
+  'Done when',
+];
 
 /**
  * Not a section: the one "Impact: ..." line at the top of the description, saying in plain
@@ -194,11 +207,12 @@ export function validateSectionBody(section: SectionName, body: string): string[
     }
   }
 
-  if (section === 'Done when') {
+  // Checks gets its full grammar from the project's checks module (checks.ts); here only the shape.
+  if (section === 'Done when' || section === 'Checks') {
     for (const line of lines) {
       if (!CHECKLIST_LINE.test(line.trim())) {
         errors.push(
-          `Done when: "${line.trim()}" is not a checklist item ("- [ ] <check that proves it>")`,
+          `${section}: "${line.trim()}" is not a checklist item ("- [ ] <check that proves it>")`,
         );
       }
     }
@@ -217,7 +231,11 @@ export function applySectionPatches(
   allowed: readonly SectionName[] = PATCHABLE_SECTIONS,
 ): string {
   const errors: string[] = [];
-  const resolved: { name: SectionName | typeof IMPACT; mode: PatchMode; body: string }[] = [];
+  const resolved: {
+    name: SectionName | typeof IMPACT;
+    mode: PatchMode | 'remove';
+    body: string;
+  }[] = [];
 
   for (const patch of patches) {
     if (patch.section.trim().toLowerCase() === 'impact') {
@@ -240,6 +258,11 @@ export function applySectionPatches(
       );
       continue;
     }
+    // Emptying Done when removes it, for a ticket whose checks moved to ## Checks (checked below).
+    if (name === 'Done when' && patch.mode === 'replace' && patch.body.trim() === '') {
+      resolved.push({ name, mode: 'remove', body: '' });
+      continue;
+    }
     errors.push(...validateSectionBody(name, patch.body));
     resolved.push({ name, mode: patch.mode, body: patch.body });
   }
@@ -251,9 +274,27 @@ export function applySectionPatches(
     result =
       patch.name === IMPACT
         ? setImpactLine(result, patch.body)
-        : patchSection(result, patch.name, patch.mode, patch.body);
+        : patch.mode === 'remove'
+          ? removeSection(result, patch.name)
+          : patchSection(result, patch.name, patch.mode, patch.body);
   }
+  if (resolved.some((p) => p.mode === 'remove') && !sectionExists(splitLines(result), 'Checks'))
+    throw new Error(
+      'Description patch refused:\n- Done when: body is empty. Only a ticket with a ## Checks section may drop Done when.',
+    );
   return result;
+}
+
+/** The description without one section, heading and body. */
+function removeSection(description: string, name: SectionName): string {
+  const lines = splitLines(description);
+  const span = findSection(lines, name);
+  if (!span) return description;
+  const kept = [...lines.slice(0, span.headingLine), ...lines.slice(span.end)];
+  return kept
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/\n+$/, '');
 }
 
 /** Applies one patch without validation. Exported for the ask/answer row writers. */
@@ -267,7 +308,8 @@ export function patchSection(
   const span = findSection(lines, name);
   const existing = span ? trimBlankEdges(lines.slice(span.start, span.end)) : [];
   let bodyLines = trimBlankEdges(splitLines(body));
-  if (name === 'Observed' || name === 'Done when') bodyLines = bulleted(bodyLines, existing);
+  if (name === 'Observed' || name === 'Done when' || name === 'Checks')
+    bodyLines = bulleted(bodyLines, existing);
 
   if (span) {
     const newBody = mode === 'append' ? [...existing, ...bodyLines] : bodyLines;
@@ -406,6 +448,14 @@ export function lintForState(description: string, stateType: string | null): Fin
   return findings;
 }
 
+function sectionExists(lines: string[], name: SectionName): boolean {
+  try {
+    return findSection(lines, name) !== null;
+  } catch {
+    return true;
+  }
+}
+
 export function lintDescription(description: string): Finding[] {
   const findings: Finding[] = [];
   const lines = splitLines(description);
@@ -419,7 +469,9 @@ export function lintDescription(description: string): Finding[] {
       continue;
     }
     if (!span) {
-      if (name === 'Observed' || name === 'Done when') {
+      // A ## Checks section stands in for Done when on the teams that use one.
+      const replaced = name === 'Done when' && sectionExists(lines, 'Checks');
+      if ((name === 'Observed' || name === 'Done when') && !replaced) {
         findings.push({ code: 'missing_section', detail: `No "${name}" section` });
       }
       continue;

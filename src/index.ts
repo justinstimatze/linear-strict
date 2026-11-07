@@ -18,6 +18,7 @@ import { runInstallCli, signOffHookHealth } from './install.js';
 import { DEFAULT_JUDGE_MODEL, judgeSignOff } from './judge.js';
 import { resolveJudgeKey } from './judge-key.js';
 import { DEFAULT_ROUTE_MODEL, routeJudge, teamRoutingFromEnv, type RouteJudge } from './route.js';
+import { checksRulesFromEnv } from './checks.js';
 import { type OverlapReader, overlapReader } from './overlap-model.js';
 import { type Elicitor, elicitSignOff, previewSignOff } from './sign-off.js';
 import { defaultStateDir, fileSignOffStore } from './sign-off-store.js';
@@ -72,6 +73,9 @@ async function main(): Promise<void> {
     );
   }
   const teamRouting = teamRoutingFromEnv(process.env, routeReader);
+  // Teams whose tickets carry ## Checks, read by the project's own checks module; a module that
+  // won't load stops the server here rather than letting it write ## Checks unchecked.
+  const checks = await checksRulesFromEnv(process.env);
   // One StrictLinear per access token, so its viewer lookup is cached until a
   // refresh rotates the token.
   const handlers = createRefreshingProvider({
@@ -91,6 +95,7 @@ async function main(): Promise<void> {
           signOff,
           overlapReader: readOverlap,
           teamRouting,
+          checks,
           principal:
             principalConfig && principalGql
               ? { gql: principalGql, userId: principalConfig.userId }

@@ -85,6 +85,15 @@ import {
   uncitedWarning,
   UNTICKED,
 } from './done-when.js';
+import {
+  addedChecksById,
+  checksApply,
+  type ChecksRules,
+  checksWriteProblems,
+  droppedChecksById,
+  newIds,
+  notMigrated,
+} from './checks.js';
 import { type IssueCore, nameOf, personOut, type Viewer } from './issue-core.js';
 import {
   type Accounting,
@@ -191,6 +200,8 @@ export interface CreateIssueArgs {
 export interface StrictLinearOptions {
   gql: Gql;
   claims: ClaimStore;
+  /** The teams whose tickets carry ## Checks, and the project module that reads them (checks.ts). */
+  checks?: ChecksRules | undefined;
   now?: () => Date;
   /** The branch "Done" means the work is on. Defaults to main. */
   mainBranch?: string;
@@ -313,6 +324,7 @@ export class StrictLinear {
   >();
   private readonly overlapReader: OverlapReader | undefined;
   private readonly teamRouting: TeamRouting | undefined;
+  private readonly checks: ChecksRules | undefined;
   private readonly titles: TeamTitles;
   private readonly releaseNotePair: ReleaseNoteLabels | null;
   /** Each team's release-note label ids, read at most once every ten minutes. */
@@ -333,6 +345,7 @@ export class StrictLinear {
     this.principal = options.principal;
     this.overlapReader = options.overlapReader;
     this.teamRouting = options.teamRouting;
+    this.checks = options.checks;
     this.titles = new TeamTitles(this.gql);
     this.releaseNotePair =
       options.releaseNoteLabels === undefined
@@ -1210,6 +1223,7 @@ export class StrictLinear {
     const issue = await this.writable(id);
     this.checkBase(issue, base);
     const next = applySectionPatches(issue.description ?? '', patches);
+    await this.checkChecks(issue, issue.description ?? '', next);
 
     const reconciled = reconciledThrough
       ? await this.reconcile(issue, reconciledThrough, accountsFor, patches.length > 0)
@@ -1377,7 +1391,14 @@ export class StrictLinear {
     risk?: string,
     token?: string,
   ) {
-    const dropped = droppedChecks(issue.description ?? '', next);
+    const before = issue.description ?? '';
+    const checks = checksApply(this.checks, issue.team?.key);
+    const dropped = checks
+      ? [
+          ...notMigrated(checks, next, droppedChecks(before, next)),
+          ...droppedChecksById(checks, before, next),
+        ]
+      : droppedChecks(before, next);
     if (dropped.length === 0) {
       checkNothingDropped(reason, token);
       return { dropped, note: undefined, signer: undefined, model: undefined };
@@ -1388,7 +1409,10 @@ export class StrictLinear {
           identifier: issue.identifier,
           title: issue.title,
           dropped,
-          added: addedChecks(issue.description ?? '', next),
+          added: [
+            ...addedChecks(before, next),
+            ...(checks ? addedChecksById(checks, before, next) : []),
+          ],
           reason: why,
           risk: what,
           description: issue.description ?? '',
@@ -1398,6 +1422,30 @@ export class StrictLinear {
     const answer: SignOffAnswer = typeof raw === 'string' ? { outcome: raw } : raw;
     if (answer.outcome !== 'approved') throw new Error(signOffRefusal(answer, dropped));
     return { dropped, note: answer.note, signer: answer.signer ?? 'person', model: answer.model };
+  }
+
+  /**
+   * Refuses a write whose ## Checks section the project's checks module can't read, whose Impact
+   * claims no check cites, or that issues an id the ticket had before. Earlier versions are read only
+   * when the write adds an id.
+   */
+  private async checkChecks(issue: IssueCore, before: string, next: string) {
+    const m = checksApply(this.checks, issue.team?.key);
+    if (!m) return;
+    const earlier =
+      newIds(m, before, next).length > 0
+        ? (await this.descriptionHistory(issue.id)).versions
+            .map((v) => v.text)
+            .filter((text): text is string => text !== undefined)
+        : [];
+    const problems = checksWriteProblems(m, before, next, earlier);
+    if (problems.length === 1) throw new Error(problems[0]);
+    if (problems.length > 1)
+      throw new Error(
+        `Nothing was written. ${String(problems.length)} things to fix before the retry:\n\n${problems
+          .map((p, i) => `${String(i + 1)}. ${p}`)
+          .join('\n\n')}`,
+      );
   }
 
   private async postComment(issueId: string, body: string) {
@@ -1433,6 +1481,7 @@ export class StrictLinear {
     let description = issue.description ?? '';
     if (patch.length > 0) {
       description = applySectionPatches(description, patch);
+      await this.checkChecks(issue, issue.description ?? '', description);
       await this.checkDescope(issue, description, undefined, 'comment');
     }
     const questionId = questionFor(args, description);
@@ -1980,6 +2029,10 @@ export class StrictLinear {
     if (!team) throw new Error(`No team with key "${args.team}". list_teams gives the keys.`);
 
     const description = args.sections?.length ? applySectionPatches('', args.sections) : undefined;
+    if (description !== undefined) {
+      const m = checksApply(this.checks, team.key);
+      if (m) problems.push(...checksWriteProblems(m, '', description));
+    }
 
     // Whether a visitor will notice this, decided now by whoever knows the work. The agents' own team
     // holds nothing a visitor sees, so it defaults to none there; everywhere else it is required.
