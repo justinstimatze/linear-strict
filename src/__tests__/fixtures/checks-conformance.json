@@ -1,0 +1,774 @@
+{
+  "$comment": "Expected values are a reference implementation's own outputs over checks-rulebook.json. `ticket` is the description in the form a check is written in, `stored` (when present) the same ticket as Linear stores it.",
+  "cases": [
+    {
+      "description": "plain walk check quoting the whole Impact",
+      "ticket": "Impact: a visitor sees the cap\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · walk alpha/visitor · the reply names the cap <!-- from impact \"a visitor sees the cap\" -->",
+      "parse": {
+        "checks": [
+          {
+            "id": "C1",
+            "ticked": false,
+            "kind": "walk",
+            "target": "alpha/visitor",
+            "claim": "the reply names the cap",
+            "quotes": [
+              "a visitor sees the cap"
+            ]
+          }
+        ],
+        "problems": []
+      },
+      "coverage": {
+        "misquoted": [],
+        "uncovered": []
+      }
+    },
+    {
+      "description": "ticked with a lower-case x",
+      "ticket": "Impact: a visitor sees the cap\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [x] C1 · walk alpha/visitor · the reply names the cap <!-- from impact \"a visitor sees the cap\" -->",
+      "parse": {
+        "checks": [
+          {
+            "id": "C1",
+            "ticked": true,
+            "kind": "walk",
+            "target": "alpha/visitor",
+            "claim": "the reply names the cap",
+            "quotes": [
+              "a visitor sees the cap"
+            ]
+          }
+        ],
+        "problems": []
+      },
+      "coverage": {
+        "misquoted": [],
+        "uncovered": []
+      }
+    },
+    {
+      "description": "ticked with a capital X, as Linear stores it",
+      "ticket": "Impact: a visitor sees the cap\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [X] C1 · walk alpha/visitor · the reply names the cap <!-- from impact \"a visitor sees the cap\" -->",
+      "parse": {
+        "checks": [
+          {
+            "id": "C1",
+            "ticked": true,
+            "kind": "walk",
+            "target": "alpha/visitor",
+            "claim": "the reply names the cap",
+            "quotes": [
+              "a visitor sees the cap"
+            ]
+          }
+        ],
+        "problems": []
+      },
+      "coverage": {
+        "misquoted": [],
+        "uncovered": []
+      }
+    },
+    {
+      "description": "Linear-escaped brackets and a * bullet read through the stored form",
+      "ticket": "Impact: a visitor sees the cap\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [x] C1 · walk alpha/visitor · the reply names [cap] <!-- from impact \"a visitor sees the cap\" -->",
+      "stored": "Impact: a visitor sees the cap\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n* \\[X\\] C1 · walk alpha/visitor · the reply names \\[cap\\] <!-- from impact \"a visitor sees the cap\" -->",
+      "parse": {
+        "checks": [
+          {
+            "id": "C1",
+            "ticked": true,
+            "kind": "walk",
+            "target": "alpha/visitor",
+            "claim": "the reply names [cap]",
+            "quotes": [
+              "a visitor sees the cap"
+            ]
+          }
+        ],
+        "problems": []
+      },
+      "coverage": {
+        "misquoted": [],
+        "uncovered": []
+      }
+    },
+    {
+      "description": "Linear-escaped brackets handed to the interpreter as they are",
+      "ticket": "Impact: a visitor sees the cap\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- \\[ \\] C1 · walk alpha/visitor · the reply names the cap <!-- from impact \"a visitor sees the cap\" -->",
+      "parse": {
+        "checks": [],
+        "problems": [
+          "not a check line: - \\[ \\] C1 · walk alpha/visitor · the reply names the cap <!-- from impact \"a visitor sees the cap\" -->"
+        ]
+      },
+      "coverage": {
+        "misquoted": [],
+        "uncovered": [
+          "visitor",
+          "sees"
+        ]
+      }
+    },
+    {
+      "description": "walk kind, staff on www",
+      "ticket": "Impact: none for visitors\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · walk www/staff · the admin page lists it <!-- from D1 -->",
+      "parse": {
+        "checks": [
+          {
+            "id": "C1",
+            "ticked": false,
+            "kind": "walk",
+            "target": "www/staff",
+            "claim": "the admin page lists it",
+            "quotes": []
+          }
+        ],
+        "problems": []
+      },
+      "coverage": {
+        "misquoted": [],
+        "uncovered": []
+      }
+    },
+    {
+      "description": "walk kind, signed out",
+      "ticket": "Impact: none\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · walk alpha/signed-out · sign-in shows <!-- from D1 -->",
+      "parse": {
+        "checks": [
+          {
+            "id": "C1",
+            "ticked": false,
+            "kind": "walk",
+            "target": "alpha/signed-out",
+            "claim": "sign-in shows",
+            "quotes": []
+          }
+        ],
+        "problems": []
+      },
+      "coverage": {
+        "misquoted": [],
+        "uncovered": []
+      }
+    },
+    {
+      "description": "read kind",
+      "ticket": "Impact: none\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · read posthog-flag cap env=production · on <!-- from D2 -->",
+      "parse": {
+        "checks": [
+          {
+            "id": "C1",
+            "ticked": false,
+            "kind": "read",
+            "target": "posthog-flag cap env=production",
+            "claim": "on",
+            "quotes": []
+          }
+        ],
+        "problems": []
+      },
+      "coverage": {
+        "misquoted": [],
+        "uncovered": []
+      }
+    },
+    {
+      "description": "run kind",
+      "ticket": "Impact: none\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · run pr-ci tests/chat.spec.ts:42 · passes <!-- from D1 -->",
+      "parse": {
+        "checks": [
+          {
+            "id": "C1",
+            "ticked": false,
+            "kind": "run",
+            "target": "pr-ci tests/chat.spec.ts:42",
+            "claim": "passes",
+            "quotes": []
+          }
+        ],
+        "problems": []
+      },
+      "coverage": {
+        "misquoted": [],
+        "uncovered": []
+      }
+    },
+    {
+      "description": "fault kind",
+      "ticket": "Impact: none\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · fault router_down @promote · an error shows <!-- from D1 -->",
+      "parse": {
+        "checks": [
+          {
+            "id": "C1",
+            "ticked": false,
+            "kind": "fault",
+            "target": "router_down @promote",
+            "claim": "an error shows",
+            "quotes": []
+          }
+        ],
+        "problems": []
+      },
+      "coverage": {
+        "misquoted": [],
+        "uncovered": []
+      }
+    },
+    {
+      "description": "telemetry kind",
+      "ticket": "Impact: none\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · telemetry cap-hits until 2026-12-01 · nonzero <!-- from D1 -->",
+      "parse": {
+        "checks": [
+          {
+            "id": "C1",
+            "ticked": false,
+            "kind": "telemetry",
+            "target": "cap-hits until 2026-12-01",
+            "claim": "nonzero",
+            "quotes": []
+          }
+        ],
+        "problems": []
+      },
+      "coverage": {
+        "misquoted": [],
+        "uncovered": []
+      }
+    },
+    {
+      "description": "monitor kind",
+      "ticket": "Impact: none\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · monitor cap.alert:v2 · fired <!-- from D1 -->",
+      "parse": {
+        "checks": [
+          {
+            "id": "C1",
+            "ticked": false,
+            "kind": "monitor",
+            "target": "cap.alert:v2",
+            "claim": "fired",
+            "quotes": []
+          }
+        ],
+        "problems": []
+      },
+      "coverage": {
+        "misquoted": [],
+        "uncovered": []
+      }
+    },
+    {
+      "description": "bad walk target",
+      "ticket": "Impact: none\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · walk develop/visitor · seen <!-- from D1 -->",
+      "parse": {
+        "checks": [
+          {
+            "id": "C1",
+            "ticked": false,
+            "kind": "walk",
+            "target": "develop/visitor",
+            "claim": "seen",
+            "quotes": []
+          }
+        ],
+        "problems": [
+          "C1: \"develop/visitor\" is not a walk target (<host>/<profile>)"
+        ]
+      },
+      "coverage": {
+        "misquoted": [],
+        "uncovered": []
+      }
+    },
+    {
+      "description": "bad run target, no line number",
+      "ticket": "Impact: none\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · run pr-ci tests/chat.spec.ts · passes <!-- from D1 -->",
+      "parse": {
+        "checks": [
+          {
+            "id": "C1",
+            "ticked": false,
+            "kind": "run",
+            "target": "pr-ci tests/chat.spec.ts",
+            "claim": "passes",
+            "quotes": []
+          }
+        ],
+        "problems": [
+          "C1: \"pr-ci tests/chat.spec.ts\" is not a run target (<workflow> <spec file>:<line>)"
+        ]
+      },
+      "coverage": {
+        "misquoted": [],
+        "uncovered": []
+      }
+    },
+    {
+      "description": "bad telemetry target",
+      "ticket": "Impact: none\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · telemetry cap-hits until soon · nonzero <!-- from D1 -->",
+      "parse": {
+        "checks": [
+          {
+            "id": "C1",
+            "ticked": false,
+            "kind": "telemetry",
+            "target": "cap-hits until soon",
+            "claim": "nonzero",
+            "quotes": []
+          }
+        ],
+        "problems": [
+          "C1: \"cap-hits until soon\" is not a telemetry target (<query id> until <YYYY-MM-DD>)"
+        ]
+      },
+      "coverage": {
+        "misquoted": [],
+        "uncovered": []
+      }
+    },
+    {
+      "description": "missing provenance",
+      "ticket": "Impact: none\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · read healthz https://x.test · 200",
+      "parse": {
+        "checks": [
+          {
+            "id": "C1",
+            "ticked": false,
+            "kind": "read",
+            "target": "healthz https://x.test",
+            "claim": "200",
+            "quotes": []
+          }
+        ],
+        "problems": [
+          "C1 names no source (<!-- from impact \"…\" --> or <!-- from D<n> -->)"
+        ]
+      },
+      "coverage": {
+        "misquoted": [],
+        "uncovered": []
+      }
+    },
+    {
+      "description": "provenance the rulebook does not read",
+      "ticket": "Impact: none\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · read healthz https://x.test · 200 <!-- from the plan -->",
+      "parse": {
+        "checks": [
+          {
+            "id": "C1",
+            "ticked": false,
+            "kind": "read",
+            "target": "healthz https://x.test",
+            "claim": "200",
+            "quotes": []
+          }
+        ],
+        "problems": [
+          "C1: \"from the plan\" is not a source the rulebook reads"
+        ]
+      },
+      "coverage": {
+        "misquoted": [],
+        "uncovered": []
+      }
+    },
+    {
+      "description": "repeated id",
+      "ticket": "Impact: none\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · read healthz a · 200 <!-- from D1 -->\n- [ ] C1 · read healthz b · 200 <!-- from D2 -->",
+      "parse": {
+        "checks": [
+          {
+            "id": "C1",
+            "ticked": false,
+            "kind": "read",
+            "target": "healthz a",
+            "claim": "200",
+            "quotes": []
+          },
+          {
+            "id": "C1",
+            "ticked": false,
+            "kind": "read",
+            "target": "healthz b",
+            "claim": "200",
+            "quotes": []
+          }
+        ],
+        "problems": [
+          "C1 appears twice"
+        ]
+      },
+      "coverage": {
+        "misquoted": [],
+        "uncovered": []
+      }
+    },
+    {
+      "description": "prose line in the section",
+      "ticket": "Impact: none\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] it shipped · #1\n- [ ] C1 · read healthz a · 200 <!-- from D1 -->",
+      "parse": {
+        "checks": [
+          {
+            "id": "C1",
+            "ticked": false,
+            "kind": "read",
+            "target": "healthz a",
+            "claim": "200",
+            "quotes": []
+          }
+        ],
+        "problems": [
+          "not a check line: - [ ] it shipped · #1"
+        ]
+      },
+      "coverage": {
+        "misquoted": [],
+        "uncovered": []
+      }
+    },
+    {
+      "description": "unknown kind word",
+      "ticket": "Impact: none\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · eyeball it · fine <!-- from D1 -->",
+      "parse": {
+        "checks": [],
+        "problems": [
+          "not a check line: - [ ] C1 · eyeball it · fine <!-- from D1 -->"
+        ]
+      },
+      "coverage": {
+        "misquoted": [],
+        "uncovered": []
+      }
+    },
+    {
+      "description": "misquote",
+      "ticket": "Impact: a visitor sees the cap\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · walk alpha/visitor · names the cap <!-- from impact \"a visitor sees the limit\" -->",
+      "parse": {
+        "checks": [
+          {
+            "id": "C1",
+            "ticked": false,
+            "kind": "walk",
+            "target": "alpha/visitor",
+            "claim": "names the cap",
+            "quotes": [
+              "a visitor sees the limit"
+            ]
+          }
+        ],
+        "problems": []
+      },
+      "coverage": {
+        "misquoted": [
+          {
+            "id": "C1",
+            "quote": "a visitor sees the limit"
+          }
+        ],
+        "uncovered": [
+          "visitor",
+          "sees"
+        ]
+      }
+    },
+    {
+      "description": "uncovered word",
+      "ticket": "Impact: a visitor sees the cap and a reset time\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · walk alpha/visitor · names the cap <!-- from impact \"a visitor sees the cap\" -->",
+      "parse": {
+        "checks": [
+          {
+            "id": "C1",
+            "ticked": false,
+            "kind": "walk",
+            "target": "alpha/visitor",
+            "claim": "names the cap",
+            "quotes": [
+              "a visitor sees the cap"
+            ]
+          }
+        ],
+        "problems": []
+      },
+      "coverage": {
+        "misquoted": [],
+        "uncovered": [
+          "reset",
+          "time"
+        ]
+      }
+    },
+    {
+      "description": "quote differing only in case and punctuation",
+      "ticket": "Impact: A visitor sees the cap, then retries.\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · walk alpha/visitor · x <!-- from impact \"a visitor sees the cap then retries\" -->",
+      "parse": {
+        "checks": [
+          {
+            "id": "C1",
+            "ticked": false,
+            "kind": "walk",
+            "target": "alpha/visitor",
+            "claim": "x",
+            "quotes": [
+              "a visitor sees the cap then retries"
+            ]
+          }
+        ],
+        "problems": []
+      },
+      "coverage": {
+        "misquoted": [],
+        "uncovered": []
+      }
+    },
+    {
+      "description": "a short quote does not cover the start of a longer word",
+      "ticket": "Impact: the capacity shows\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · walk alpha/visitor · x <!-- from impact \"the cap\" -->",
+      "parse": {
+        "checks": [
+          {
+            "id": "C1",
+            "ticked": false,
+            "kind": "walk",
+            "target": "alpha/visitor",
+            "claim": "x",
+            "quotes": [
+              "the cap"
+            ]
+          }
+        ],
+        "problems": []
+      },
+      "coverage": {
+        "misquoted": [
+          {
+            "id": "C1",
+            "quote": "the cap"
+          }
+        ],
+        "uncovered": [
+          "capacity",
+          "shows"
+        ]
+      }
+    },
+    {
+      "description": "\"none\" Impact with a colon: the tail is a claim, quoted",
+      "ticket": "Impact: none for visitors: a grader reads ids\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · walk alpha/visitor · x <!-- from impact \"a grader reads ids\" -->",
+      "parse": {
+        "checks": [
+          {
+            "id": "C1",
+            "ticked": false,
+            "kind": "walk",
+            "target": "alpha/visitor",
+            "claim": "x",
+            "quotes": [
+              "a grader reads ids"
+            ]
+          }
+        ],
+        "problems": []
+      },
+      "coverage": {
+        "misquoted": [],
+        "uncovered": []
+      }
+    },
+    {
+      "description": "\"none\" Impact with a colon: the tail is a claim, unquoted",
+      "ticket": "Impact: none for visitors: a grader reads ids\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · read healthz a · 200 <!-- from D1 -->",
+      "parse": {
+        "checks": [
+          {
+            "id": "C1",
+            "ticked": false,
+            "kind": "read",
+            "target": "healthz a",
+            "claim": "200",
+            "quotes": []
+          }
+        ],
+        "problems": []
+      },
+      "coverage": {
+        "misquoted": [],
+        "uncovered": [
+          "grader",
+          "reads"
+        ]
+      }
+    },
+    {
+      "description": "\"none\" Impact with no colon claims nothing",
+      "ticket": "Impact: none yet, no fix shipped\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · read healthz a · 200 <!-- from D1 -->",
+      "parse": {
+        "checks": [
+          {
+            "id": "C1",
+            "ticked": false,
+            "kind": "read",
+            "target": "healthz a",
+            "claim": "200",
+            "quotes": []
+          }
+        ],
+        "problems": []
+      },
+      "coverage": {
+        "misquoted": [],
+        "uncovered": []
+      }
+    },
+    {
+      "description": "multi-quote coverage in one comment",
+      "ticket": "Impact: a visitor sees the cap and the reset time\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · walk alpha/visitor · x <!-- from impact \"a visitor sees the cap\"; impact \"the reset time\" -->",
+      "parse": {
+        "checks": [
+          {
+            "id": "C1",
+            "ticked": false,
+            "kind": "walk",
+            "target": "alpha/visitor",
+            "claim": "x",
+            "quotes": [
+              "a visitor sees the cap",
+              "the reset time"
+            ]
+          }
+        ],
+        "problems": []
+      },
+      "coverage": {
+        "misquoted": [],
+        "uncovered": []
+      }
+    },
+    {
+      "description": "coverage split across two checks, one citing D<n> as well",
+      "ticket": "Impact: a visitor sees the cap and the reset time\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · walk alpha/visitor · x <!-- from impact \"a visitor sees the cap\" -->\n- [ ] C2 · walk www/visitor · y <!-- from D2; impact \"the reset time\" -->",
+      "parse": {
+        "checks": [
+          {
+            "id": "C1",
+            "ticked": false,
+            "kind": "walk",
+            "target": "alpha/visitor",
+            "claim": "x",
+            "quotes": [
+              "a visitor sees the cap"
+            ]
+          },
+          {
+            "id": "C2",
+            "ticked": false,
+            "kind": "walk",
+            "target": "www/visitor",
+            "claim": "y",
+            "quotes": [
+              "the reset time"
+            ]
+          }
+        ],
+        "problems": []
+      },
+      "coverage": {
+        "misquoted": [],
+        "uncovered": []
+      }
+    },
+    {
+      "description": "Impact line written twice over with an emoji prefix",
+      "ticket": "Impact: 🤖 Impact: a visitor sees the cap\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · walk alpha/visitor · x <!-- from impact \"a visitor sees the cap\" -->",
+      "parse": {
+        "checks": [
+          {
+            "id": "C1",
+            "ticked": false,
+            "kind": "walk",
+            "target": "alpha/visitor",
+            "claim": "x",
+            "quotes": [
+              "a visitor sees the cap"
+            ]
+          }
+        ],
+        "problems": []
+      },
+      "coverage": {
+        "misquoted": [],
+        "uncovered": []
+      }
+    },
+    {
+      "description": "short words and stopwords need no quote",
+      "ticket": "Impact: it will only show when they have it\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · read healthz a · 200 <!-- from D1 -->",
+      "parse": {
+        "checks": [
+          {
+            "id": "C1",
+            "ticked": false,
+            "kind": "read",
+            "target": "healthz a",
+            "claim": "200",
+            "quotes": []
+          }
+        ],
+        "problems": []
+      },
+      "coverage": {
+        "misquoted": [],
+        "uncovered": [
+          "show"
+        ]
+      }
+    },
+    {
+      "description": "the next heading ends the section",
+      "ticket": "Impact: a visitor sees the cap\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · walk alpha/visitor · x <!-- from impact \"a visitor sees the cap\" -->\n\n## Open questions\n\n- not a check",
+      "parse": {
+        "checks": [
+          {
+            "id": "C1",
+            "ticked": false,
+            "kind": "walk",
+            "target": "alpha/visitor",
+            "claim": "x",
+            "quotes": [
+              "a visitor sees the cap"
+            ]
+          }
+        ],
+        "problems": []
+      },
+      "coverage": {
+        "misquoted": [],
+        "uncovered": []
+      }
+    },
+    {
+      "description": "no ## Checks section",
+      "ticket": "Impact: a visitor sees the cap\n\n## Done when\n\n- [ ] it works",
+      "parse": null,
+      "coverage": {
+        "misquoted": [],
+        "uncovered": [
+          "visitor",
+          "sees"
+        ]
+      }
+    },
+    {
+      "description": "a ### Checks heading is not the section",
+      "ticket": "Impact: a visitor sees the cap\n\n### Checks\n\n- [ ] C1 · walk alpha/visitor · x <!-- from impact \"a visitor sees the cap\" -->",
+      "parse": null,
+      "coverage": {
+        "misquoted": [],
+        "uncovered": [
+          "visitor",
+          "sees"
+        ]
+      }
+    }
+  ]
+}

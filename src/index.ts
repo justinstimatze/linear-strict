@@ -73,10 +73,9 @@ async function main(): Promise<void> {
     );
   }
   const teamRouting = teamRoutingFromEnv(process.env, routeReader);
-  // Teams whose tickets carry ## Checks, read by the project's own checks module. It is loaded once,
-  // here: a module that won't load stops the server rather than letting it write ## Checks unchecked,
-  // and a change to the module or its rulebook takes effect at the next restart.
-  const checks = await checksRulesFromEnv(process.env);
+  // Teams whose tickets carry ## Checks, read with the project's rulebook. It is read once, here, so
+  // a change to it takes effect at the next restart; a rulebook that won't read leaves Checks off.
+  const checks = checksRulesFromEnv(process.env);
   // One StrictLinear per access token, so its viewer lookup is cached until a
   // refresh rotates the token.
   const handlers = createRefreshingProvider({

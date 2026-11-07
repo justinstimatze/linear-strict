@@ -215,7 +215,7 @@ export function validateSectionBody(section: SectionName, body: string): string[
     }
   }
 
-  // Checks gets its full grammar from the project's checks module (checks.ts); here only the shape.
+  // Checks gets its full grammar from the project's rulebook (checks.ts); here only the shape.
   if (section === 'Done when' || section === 'Checks') {
     for (const line of lines) {
       if (!CHECKLIST_LINE.test(line.trim())) {

@@ -202,7 +202,7 @@ export interface CreateIssueArgs {
 export interface StrictLinearOptions {
   gql: Gql;
   claims: ClaimStore;
-  /** The teams whose tickets carry ## Checks, and the project module that reads them (checks.ts). */
+  /** The teams whose tickets carry ## Checks, and the rulebook interpreter that reads them (checks.ts). */
   checks?: ChecksRules | undefined;
   now?: () => Date;
   /** The branch "Done" means the work is on. Defaults to main. */
@@ -1469,7 +1469,7 @@ export class StrictLinear {
   }
 
   /**
-   * Refuses a write whose ## Checks section the project's checks module can't read, whose Impact
+   * Refuses a write whose ## Checks section the rulebook's grammar can't read, whose Impact
    * claims no check cites, or that issues an id the ticket had before. Earlier versions are read only
    * when the write adds an id.
    */

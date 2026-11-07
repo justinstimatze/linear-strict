@@ -139,14 +139,33 @@ The flow uses PKCE, so a client secret is optional. `auth status` shows whether 
 | `LINEAR_STRICT_JUDGE_MODEL` | `claude-opus-5-5` | The model that decides when `LINEAR_STRICT_SIGN_OFF=judge` |
 | `LINEAR_STRICT_OVERLAP` | `model` | How `create_issue` finds the open tickets a new one overlaps: `model` has `claude-sonnet-5-5` read every open title on the team when a judge key is set, else Linear's searches; `search` always uses the searches |
 | `ANTHROPIC_API_KEY` | — | The judge's key, if not saved with `auth judge-key set` |
-| `LINEAR_STRICT_CHECKS_TEAMS` | — | Comma-separated team keys whose tickets may carry a `## Checks` section of checks with permanent ids. Set with `LINEAR_STRICT_CHECKS_MODULE`, or neither |
-| `LINEAR_STRICT_CHECKS_MODULE` | — | Path to the project's own checks module (`parseChecks`, `impactCoverage`, `impactLine`), which refuses a `## Checks` write it can't read; a module that won't load stops the server at startup. It is loaded once, so a change to the module or the rulebook it reads takes effect only after the server restarts |
+| `LINEAR_STRICT_CHECKS_TEAMS` | — | Comma-separated team keys whose tickets may carry a `## Checks` section of checks with permanent ids. Set with `LINEAR_STRICT_CHECKS_RULEBOOK`, or neither |
+| `LINEAR_STRICT_CHECKS_RULEBOOK` | — | Path to the project's checks rulebook, a JSON file ([below](#checks-rulebook)). Read once at startup, with its sha256 logged to stderr, so a change takes effect on restart. Setting only one of the two variables, or a rulebook that is missing, unreadable, not JSON or lacks a required field, leaves `## Checks` off for every team and logs one line saying why |
 | `LINEAR_STRICT_STATE_DIR` | `$XDG_STATE_HOME/linear-strict` | Where claim records and pending sign-offs are kept |
 | `LINEAR_STRICT_CONFIG_DIR` | `$XDG_CONFIG_HOME/linear-strict` | Where `auth login` stores credentials |
 | `LINEAR_STRICT_SINGLE_INSTANCE` | `1` | `0` turns off the check that lets a replaced server exit ([below](#one-server-per-connection)) |
 | `LINEAR_STRICT_DEBUG` | — | `1` logs startup detail to stderr |
 
 Claim records live on the machine running the server. A Done check from a machine with no claim on record is refused.
+
+### Checks rulebook
+
+`## Checks` rules are data. The server reads them from the rulebook and runs its own interpreter (`src/checks.ts`); it never loads project code. The file is either the `checks` block itself or a JSON object with a `checks` key. Required fields:
+
+| Field                         | Type                    | Meaning                                                                                          |
+| ----------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------ |
+| `section`                     | string                  | The exact heading line, e.g. `## Checks`                                                         |
+| `line`                        | string, regex, 6 groups | A check line: box (` `, `x` or `X`), id, kind, target, claim, and the optional `<!-- … -->` body |
+| `provenance.pattern`          | string, regex           | What a provenance comment's body must match                                                      |
+| `provenance.quote_pattern`    | string, regex, 1 group  | Each Impact quote in a provenance comment, matched globally, e.g. `impact "([^"]+)"`             |
+| `kinds.<kind>.target`         | string                  | The target's shape, quoted in refusals                                                           |
+| `kinds.<kind>.target_pattern` | string, regex           | What a target of that kind must match                                                            |
+| `coverage.stopwords`          | string[]                | Words that never need an Impact quote                                                            |
+| `coverage.min_word_length`    | integer                 | Shorter words never need one either                                                              |
+
+Patterns are JavaScript regular expressions with no flags. Coverage normalises text by lower-casing it and turning each run of characters that are not letters or digits into one space. An Impact beginning `none` claims only what follows its first colon, or nothing without one.
+
+`src/__tests__/fixtures/checks-conformance.json` holds cases with expected readings, for any other implementation of the same rules to test itself against. `LINEAR_STRICT_CHECKS_RULEBOOK_TEST=<path> npm run test:unit` runs them against another rulebook.
 
 ### One server per connection
 

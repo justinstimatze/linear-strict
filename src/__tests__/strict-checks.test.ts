@@ -1,13 +1,17 @@
-import { existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
 import { memoryClaimStore } from '../claims.js';
 import {
   asWritten,
+  type Check,
   type ChecksModule,
+  checksInterpreter,
   checksRulesFromEnv,
   checksWriteProblems,
   droppedChecksById,
   linearChecks,
   notMigrated,
+  parseChecksRulebook,
 } from '../checks.js';
 import type { PmNode } from '../prosemirror.js';
 import { lintDescription } from '../sections.js';
@@ -15,52 +19,10 @@ import { type SignOffRequest, StrictLinear } from '../strict-linear.js';
 import { strictToolDefinitions, toolDefinitionsFor } from '../tools.js';
 import { type FakeState, fakeGql, fakeState } from './strict-fake-linear.helper.js';
 
-// A stand-in for the project's checks module: the same interface, a two-kind grammar. Like the real
-// one, it reads a lower-case x only, so a test with Linear's \`- [X]\` shows the server copes. The real
-// module is exercised at the bottom when LINEAR_STRICT_CHECKS_MODULE_TEST names one on this machine.
-const LINE = /^- \[( |x)\] (C[1-9][0-9]*) · (walk|read) ([^·]+?) · (.+?)(?: <!-- (.+) -->)?$/;
-const fake: ChecksModule = {
-  parseChecks(description) {
-    const m = /(?:^|\n)## Checks\n([\s\S]*?)(?=\n## |$)/.exec(description);
-    if (!m?.[1]) return null;
-    const checks = [];
-    const problems = [];
-    for (const raw of m[1].split('\n')) {
-      const l = raw.trim();
-      if (!l) continue;
-      const p = LINE.exec(l);
-      if (!p) {
-        problems.push(`not a check line: ${l}`);
-        continue;
-      }
-      const [, box, id = '', kind = '', target = '', claim = '', from] = p;
-      const quotes = [...(from ?? '').matchAll(/impact "([^"]+)"/g)].map((q) => q[1] ?? '');
-      checks.push({
-        id,
-        ticked: box === 'x',
-        kind,
-        target: target.trim(),
-        claim,
-        from: from ?? null,
-        quotes,
-        line: l,
-      });
-    }
-    return { checks, problems };
-  },
-  impactCoverage(impact, checks) {
-    const quotes = checks.flatMap((c) => c.quotes);
-    return {
-      misquoted: checks.flatMap((c) =>
-        c.quotes.filter((q) => !(impact ?? '').includes(q)).map((quote) => ({ id: c.id, quote })),
-      ),
-      uncovered: (impact ?? '')
-        .split(/\W+/)
-        .filter((w) => w.length >= 4 && !quotes.some((q) => q.includes(w))),
-    };
-  },
-  impactLine: (description) => /^Impact:\s*(.*)$/m.exec(description)?.[1] ?? null,
-};
+// The rulebook the conformance fixtures were generated against, read by the server's own interpreter.
+const RULEBOOK_URL = new URL('./fixtures/checks-rulebook.json', import.meta.url);
+const RULEBOOK_TEXT = readFileSync(RULEBOOK_URL, 'utf8');
+const fake: ChecksModule = checksInterpreter(parseChecksRulebook(RULEBOOK_TEXT));
 
 const IMPACT = 'Impact: a visitor sees the cap';
 const C1 =
@@ -90,45 +52,122 @@ function setup(description: string, teams = ['ENG'], overrides: Partial<FakeStat
   return { state, strict, asked };
 }
 
-describe('LINEAR_STRICT_CHECKS_TEAMS and LINEAR_STRICT_CHECKS_MODULE', () => {
-  const load = () => Promise.resolve(fake);
+describe('LINEAR_STRICT_CHECKS_TEAMS and LINEAR_STRICT_CHECKS_RULEBOOK', () => {
+  const both = { LINEAR_STRICT_CHECKS_TEAMS: 'cur, sol', LINEAR_STRICT_CHECKS_RULEBOOK: '/r.json' };
+  const fromEnv = (env: Record<string, string>, text: string | Error = RULEBOOK_TEXT) => {
+    const lines: string[] = [];
+    const rules = checksRulesFromEnv(
+      env,
+      () => {
+        if (text instanceof Error) throw text;
+        return Buffer.from(text);
+      },
+      (line) => lines.push(line),
+    );
+    return { rules, lines };
+  };
+  const OFF = /^linear-strict: ## CHECKS ARE OFF FOR EVERY TEAM: /;
 
-  it('is off with neither set, and refuses to start with only one, a bad key, or a module that will not load', async () => {
-    expect(await checksRulesFromEnv({}, load)).toBeUndefined();
-    await expect(checksRulesFromEnv({ LINEAR_STRICT_CHECKS_TEAMS: 'CUR' }, load)).rejects.toThrow(
-      'together, or neither',
-    );
-    await expect(
-      checksRulesFromEnv(
-        { LINEAR_STRICT_CHECKS_TEAMS: 'CUR,so-l', LINEAR_STRICT_CHECKS_MODULE: '/m.mjs' },
-        load,
-      ),
-    ).rejects.toThrow('not a team key: SO-L');
-    await expect(
-      checksRulesFromEnv(
-        { LINEAR_STRICT_CHECKS_TEAMS: 'CUR', LINEAR_STRICT_CHECKS_MODULE: '/m.mjs' },
-        () => Promise.reject(new Error('ENOENT')),
-      ),
-    ).rejects.toThrow(
-      /\/m\.mjs did not load: ENOENT\. linear-strict will not start with LINEAR_STRICT_CHECKS_TEAMS and LINEAR_STRICT_CHECKS_MODULE both set[\s\S]*unset both/,
-    );
-    await expect(
-      checksRulesFromEnv(
-        { LINEAR_STRICT_CHECKS_TEAMS: 'CUR', LINEAR_STRICT_CHECKS_MODULE: '/m.mjs' },
-        () => Promise.resolve({ parseChecks: (d: string) => fake.parseChecks(d) }),
-      ),
-    ).rejects.toThrow('does not export impactCoverage, impactLine');
+  it('is off and silent with neither set', () => {
+    expect(fromEnv({})).toEqual({ rules: undefined, lines: [] });
+  });
+
+  it('reads the rulebook once, accepts the bare block or a whole file, and logs its sha256', () => {
+    const block = JSON.stringify((JSON.parse(RULEBOOK_TEXT) as { checks: unknown }).checks);
+    for (const text of [RULEBOOK_TEXT, block]) {
+      const { rules, lines } = fromEnv(both, text);
+      expect(rules?.teams).toEqual(['CUR', 'SOL']);
+      expect(rules?.module.parseChecks(withChecks(C1, C2))?.problems).toEqual([]);
+      const sha = createHash('sha256').update(text).digest('hex');
+      expect(lines).toEqual([
+        `linear-strict: ## Checks on for CUR, SOL, rulebook /r.json sha256 ${sha}`,
+      ]);
+    }
+    // The default reader reads the file from disk.
+    const env = {
+      LINEAR_STRICT_CHECKS_TEAMS: 'ENG',
+      LINEAR_STRICT_CHECKS_RULEBOOK: RULEBOOK_URL.pathname,
+    };
+    expect(checksRulesFromEnv(env, undefined, () => undefined)?.teams).toEqual(['ENG']);
+  });
+
+  it('is off for every team, with one loud line, when only one of the two is set', () => {
+    for (const env of [
+      { LINEAR_STRICT_CHECKS_TEAMS: 'CUR' },
+      { LINEAR_STRICT_CHECKS_RULEBOOK: '/r.json' },
+    ]) {
+      const { rules, lines } = fromEnv(env);
+      expect(rules).toBeUndefined();
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toMatch(OFF);
+      expect(lines[0]).toContain('together, or neither');
+    }
+  });
+
+  it('is off for every team, with one loud line saying why, on a rulebook it cannot use', () => {
+    const block = JSON.parse(RULEBOOK_TEXT) as { checks: Record<string, unknown> };
+    const without = (field: string) =>
+      JSON.stringify({ checks: { ...block.checks, [field]: undefined } });
+    const cases: [string | Error, string, Record<string, string>?][] = [
+      [new Error('ENOENT: no such file'), '/r.json could not be read: ENOENT: no such file'],
+      ['{ not json', '/r.json is not JSON'],
+      ['[]', '/r.json is not a JSON object'],
+      [
+        without('coverage'),
+        'checks.coverage.stopwords (an array of strings), checks.coverage.min_word_length',
+      ],
+      [without('line'), 'checks.line (string)'],
+      [without('kinds'), 'checks.kinds (an object of kinds)'],
+      [
+        JSON.stringify({ checks: { ...block.checks, line: '^- \\[( |x)\\] (C[1-9]' } }),
+        'checks.line (a valid regular expression)',
+      ],
+      [
+        JSON.stringify({ checks: { ...block.checks, line: '^- (C1)$' } }),
+        'checks.line (a pattern with 6 capture groups)',
+      ],
+      [
+        RULEBOOK_TEXT,
+        'not a team key: SO-L',
+        { LINEAR_STRICT_CHECKS_TEAMS: 'CUR,so-l', LINEAR_STRICT_CHECKS_RULEBOOK: '/r.json' },
+      ],
+    ];
+    for (const [text, why, env = both] of cases) {
+      const { rules, lines } = fromEnv(env, text);
+      expect(rules).toBeUndefined();
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toMatch(OFF);
+      expect(lines[0]).toContain(why);
+    }
+    // A file on disk that is not there.
+    const lines: string[] = [];
     expect(
-      await checksRulesFromEnv(
-        { LINEAR_STRICT_CHECKS_TEAMS: 'cur, sol', LINEAR_STRICT_CHECKS_MODULE: '/m.mjs' },
-        load,
+      checksRulesFromEnv(
+        { LINEAR_STRICT_CHECKS_TEAMS: 'ENG', LINEAR_STRICT_CHECKS_RULEBOOK: '/nonexistent/r.json' },
+        undefined,
+        (line) => lines.push(line),
       ),
-    ).toEqual({ teams: ['CUR', 'SOL'], module: fake });
+    ).toBeUndefined();
+    expect(lines[0]).toMatch(OFF);
+  });
+
+  it('names a rulebook that has the checks block but not the coverage constants', () => {
+    const { checks } = JSON.parse(RULEBOOK_TEXT) as {
+      checks: { provenance: Record<string, unknown> };
+    };
+    const old = {
+      ...checks,
+      coverage: undefined,
+      provenance: { pattern: checks.provenance['pattern'] },
+    };
+    expect(() => parseChecksRulebook(JSON.stringify(old))).toThrow(
+      'missing or malformed: checks.provenance.quote_pattern (string), checks.coverage.stopwords (an array of strings), checks.coverage.min_word_length (a positive integer)',
+    );
   });
 });
 
 describe('a ## Checks write on a team that uses one', () => {
-  it('refuses a line the project module cannot read, and lands one it can', async () => {
+  it('refuses a line the rulebook cannot read, and lands one it can', async () => {
     const { strict, state } = setup(withChecks(C1));
     await expect(
       strict.setState('ENG-1', [
@@ -254,7 +293,7 @@ describe('a ## Checks section as Linear stores it', () => {
     expect(state.issue.description).not.toContain('C2');
   });
 
-  it('asks for sign-off before deleting a check line the module cannot read, and never reissues its id', async () => {
+  it('asks for sign-off before deleting a check line the rulebook cannot read, and never reissues its id', async () => {
     const unreadable = '- [ ] C2 · eyeball it · fine';
     const { strict, asked } = setup(withChecks(C1, unreadable));
     // A problem the ticket already had is not this write's to fix.
@@ -268,7 +307,7 @@ describe('a ## Checks section as Linear stores it', () => {
     expect(checksWriteProblems(fake, withChecks(C1, unreadable), withChecks(C1, C2))).toEqual([]);
   });
 
-  it('refuses a Checks section the module cannot find, rather than reading it as no checks', async () => {
+  it('refuses a Checks section the rulebook cannot find, rather than reading it as no checks', async () => {
     const { strict } = setup(`${IMPACT}\n\n### Checks\n\n${C1}`);
     await expect(
       strict.setState('ENG-1', [{ section: 'Checks', mode: 'append', body: C2 }]),
@@ -374,6 +413,14 @@ describe('ids, retirement and migration', () => {
     expect(state.issue.description).toContain('C3 · read posthog-flag other');
   });
 
+  it('refuses a new id when Linear cannot return the whole history, rather than read it as empty', async () => {
+    const { strict, state } = setup(withChecks(C1), ['ENG'], { historyIncomplete: true });
+    await expect(
+      strict.setState('ENG-1', [{ section: 'Checks', mode: 'append', body: C2 }]),
+    ).rejects.toThrow("Linear did not return the description's whole history");
+    expect(state.issue.description).toBe(withChecks(C1));
+  });
+
   it('moves a Done when item into ## Checks without sign-off only when its text is the whole claim of exactly one new, unticked check', () => {
     const before = `${IMPACT}\n\n## Done when\n\n- [ ] the flag is on in production`;
     const check = (claim: string, box = ' ') =>
@@ -382,8 +429,12 @@ describe('ids, retirement and migration', () => {
     expect(
       notMigrated(fake, before, withChecks(check('the flag is on in production')), dropped),
     ).toEqual(['a walk sees the cap (already ticked)']);
-    // Narrowed, negated, or arriving ticked: not a move.
+    // Narrowed, negated, arriving ticked, or split across two checks: not a move.
     for (const after of [
+      withChecks(
+        check('the flag is on in production'),
+        check('the flag is on in production').replace('C1', 'C2'),
+      ),
       withChecks(check('on, the flag is on in production')),
       withChecks(check('it is not true that the flag is on in production')),
       withChecks(check('the flag is on in production', 'x')),
@@ -454,22 +505,62 @@ describe('ids, retirement and migration', () => {
   });
 });
 
-// A real project module, when LINEAR_STRICT_CHECKS_MODULE_TEST names its path.
-const REAL = process.env['LINEAR_STRICT_CHECKS_MODULE_TEST'] ?? '';
-(REAL && existsSync(REAL) ? describe : describe.skip)('the project checks module itself', () => {
-  it('loads, and refuses what the fake refuses', async () => {
-    const rules = await checksRulesFromEnv({
-      LINEAR_STRICT_CHECKS_TEAMS: 'ENG',
-      LINEAR_STRICT_CHECKS_MODULE: REAL,
-    });
-    if (!rules) throw new Error('the checks module did not load');
-    expect(checksWriteProblems(rules.module, '', withChecks(C1, C2))).toEqual([]);
-    // A ticked check as Linear stores it parses once read the way the server reads it.
-    expect(
-      linearChecks(rules.module).parseChecks(withChecks(C1.replace('[ ]', '[X]')))?.problems,
-    ).toEqual([]);
-    expect(
-      checksWriteProblems(rules.module, '', withChecks('- [ ] C1 · eyeball x · y'))[0],
-    ).toMatch(/^Checks: /);
+interface Case {
+  description: string;
+  ticket: string;
+  stored?: string;
+  parse: {
+    checks: Pick<Check, 'id' | 'ticked' | 'kind' | 'target' | 'claim' | 'quotes'>[];
+    problems: string[];
+  } | null;
+  coverage: { misquoted: { id: string; quote: string }[]; uncovered: string[] };
+}
+const CASES = (
+  JSON.parse(
+    readFileSync(new URL('./fixtures/checks-conformance.json', import.meta.url), 'utf8'),
+  ) as { cases: Case[] }
+).cases;
+
+/** What a case expects, read with one interpreter. */
+function reading(m: ChecksModule, ticket: string) {
+  const parsed = m.parseChecks(ticket);
+  return {
+    parse: parsed && {
+      checks: parsed.checks.map(({ id, ticked, kind, target, claim, quotes }) => ({
+        id,
+        ticked,
+        kind,
+        target,
+        claim,
+        quotes,
+      })),
+      problems: parsed.problems,
+    },
+    coverage: m.impactCoverage(m.impactLine(ticket), parsed?.checks ?? []),
+  };
+}
+
+function conformance(rulebook: () => ChecksModule) {
+  it.each(CASES.map((c) => [c.description, c] as const))('%s', (_, c) => {
+    const m = rulebook();
+    const expected = { parse: c.parse, coverage: c.coverage };
+    expect(reading(m, c.ticket)).toEqual(expected);
+    if (c.stored !== undefined) expect(reading(linearChecks(m), c.stored)).toEqual(expected);
   });
+}
+
+describe('the conformance fixtures, read with the fixture rulebook', () => {
+  it('has the cases it was generated with', () => {
+    expect(CASES.length).toBeGreaterThanOrEqual(25);
+  });
+  conformance(() => fake);
 });
+
+// A project's own rulebook, when LINEAR_STRICT_CHECKS_RULEBOOK_TEST names its path.
+const REAL = process.env['LINEAR_STRICT_CHECKS_RULEBOOK_TEST'] ?? '';
+(REAL && existsSync(REAL) ? describe : describe.skip)(
+  'the conformance fixtures, read with LINEAR_STRICT_CHECKS_RULEBOOK_TEST',
+  () => {
+    conformance(() => checksInterpreter(parseChecksRulebook(readFileSync(REAL, 'utf8'))));
+  },
+);
