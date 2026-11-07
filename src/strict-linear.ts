@@ -90,6 +90,7 @@ import {
 import {
   addedChecksById,
   checksApply,
+  checksDoneProblems,
   type ChecksRules,
   checksWriteProblems,
   droppedChecksById,
@@ -922,15 +923,20 @@ export class StrictLinear {
 
   /**
    * The whole text of every saved version of the description, for a rule that must see every id a
-   * ticket ever had. A history Linear says it could not read fully refuses rather than reads as empty.
+   * ticket ever had. A history Linear says it could not read fully, or no history at all, refuses rather
+   * than reads as empty.
    */
   private async versionTexts(id: string): Promise<string[]> {
     const { versions, success } = await this.descriptionVersions(id);
+    if (versions === null)
+      throw new Error(
+        `Nothing was written: Linear returned no document history for this ticket, so whether a check id was used and retired before can't be read, and adding one could reissue a retired id. Edits to checks already there still land.`,
+      );
     if (!success)
       throw new Error(
         `Nothing was written: Linear did not return the description's whole history, which is read to tell whether a check id was used before. Retry.`,
       );
-    return (versions ?? []).map((version) => version.text);
+    return versions.map((version) => version.text);
   }
 
   /**
@@ -1877,9 +1883,13 @@ export class StrictLinear {
     states: string[],
   ): Promise<{ unchecked: string[]; branchUnchecked: boolean }> {
     const doneWhen = readSection(issue.description ?? '', 'Done when');
-    if (!doneWhen?.trim()) {
+    const m = checksApply(this.checks, issue.team?.key);
+    // On a team that uses ## Checks, a ticket with the section is gated on it, and on Done when too
+    // when it has both.
+    const checksOpen = m ? checksDoneProblems(m, issue.description ?? '') : null;
+    if (!doneWhen?.trim() && checksOpen === null) {
       throw new Error(
-        `Refusing to move ${issue.identifier} to ${stateName}: the description has no Done when section, so nothing says what finished means. Add one with set_state (checklist items that each name the check that proves it), then retry.`,
+        `Refusing to move ${issue.identifier} to ${stateName}: the description has no ${m ? 'Done when or Checks' : 'Done when'} section, so nothing says what finished means. Add one with set_state (checklist items that each name the check that proves it), then retry.`,
       );
     }
     const claim = this.claims.get(issue.id, viewer.id);
@@ -1904,6 +1914,11 @@ export class StrictLinear {
     if (uncited.length > 0) {
       throw new Error(
         `Refusing to move ${issue.identifier} to ${stateName}: ${String(uncited.length)} ticked Done when item${uncited.length === 1 ? ' does' : 's do'} not cite what showed ${uncited.length === 1 ? 'it' : 'them'} true:\n${uncited.map(({ item, reason }) => `- [x] ${item} (${reason})`).join('\n')}\n\n${CITING}`,
+      );
+    }
+    if (checksOpen && checksOpen.length > 0) {
+      throw new Error(
+        `Refusing to move ${issue.identifier} to ${stateName}: its ## Checks ${checksOpen.length === 1 ? 'is' : 'are'} not done:\n${checksOpen.map((p) => `- ${p}`).join('\n')}\n\nA check is ticked once its kind's evidence is recorded (a walk's pass, a reader's value, a run or proof). Tick it with set_state (replace the Checks section; a tick is not a reword). A check that no longer applies is retired with set_state and a descope_reason; your user is asked to approve it.`,
       );
     }
     const attachments = await this.soft<AttachmentNode>('attachments', ATTACHMENTS_QUERY, issue.id);

@@ -1,5 +1,5 @@
 {
-  "$comment": "Expected values are a reference implementation's own outputs over checks-rulebook.json. `ticket` is the description in the form a check is written in, `stored` (when present) the same ticket as Linear stores it.",
+  "$comment": "Expected values are a reference implementation's own outputs over checks-rulebook.json. `ticket` is the description in the form a check is written in, `stored` (when present) the same ticket as Linear stores it, which must read the same.",
   "cases": [
     {
       "description": "plain walk check quoting the whole Impact",
@@ -95,20 +95,141 @@
       }
     },
     {
-      "description": "Linear-escaped brackets handed to the interpreter as they are",
+      "description": "Linear-escaped brackets in the ticket itself read as written",
       "ticket": "Impact: a visitor sees the cap\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- \\[ \\] C1 · walk alpha/visitor · the reply names the cap <!-- from impact \"a visitor sees the cap\" -->",
       "parse": {
-        "checks": [],
-        "problems": [
-          "not a check line: - \\[ \\] C1 · walk alpha/visitor · the reply names the cap <!-- from impact \"a visitor sees the cap\" -->"
-        ]
+        "checks": [
+          {
+            "id": "C1",
+            "ticked": false,
+            "kind": "walk",
+            "target": "alpha/visitor",
+            "claim": "the reply names the cap",
+            "quotes": [
+              "a visitor sees the cap"
+            ]
+          }
+        ],
+        "problems": []
       },
       "coverage": {
         "misquoted": [],
-        "uncovered": [
-          "visitor",
-          "sees"
-        ]
+        "uncovered": []
+      }
+    },
+    {
+      "description": "Linear-escaped underscores, tildes and stars in a claim read as written",
+      "ticket": "Impact: none\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · read posthog-flag daily_cap env=production · a_b ~c~ *d* <!-- from D1 -->",
+      "stored": "Impact: none\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n* [ ] C1 · read posthog-flag daily\\_cap env=production · a\\_b \\~c\\~ \\*d\\* <!-- from D1 -->",
+      "parse": {
+        "checks": [
+          {
+            "id": "C1",
+            "ticked": false,
+            "kind": "read",
+            "target": "posthog-flag daily_cap env=production",
+            "claim": "a_b ~c~ *d*",
+            "quotes": []
+          }
+        ],
+        "problems": []
+      },
+      "coverage": {
+        "misquoted": [],
+        "uncovered": []
+      }
+    },
+    {
+      "description": "an unticked check with a * bullet and escaped brackets, as Linear stores it",
+      "ticket": "Impact: a visitor sees the cap\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · walk alpha/visitor · the reply names the cap <!-- from impact \"a visitor sees the cap\" -->",
+      "stored": "Impact: a visitor sees the cap\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n* \\[ \\] C1 · walk alpha/visitor · the reply names the cap <!-- from impact \"a visitor sees the cap\" -->",
+      "parse": {
+        "checks": [
+          {
+            "id": "C1",
+            "ticked": false,
+            "kind": "walk",
+            "target": "alpha/visitor",
+            "claim": "the reply names the cap",
+            "quotes": [
+              "a visitor sees the cap"
+            ]
+          }
+        ],
+        "problems": []
+      },
+      "coverage": {
+        "misquoted": [],
+        "uncovered": []
+      }
+    },
+    {
+      "description": "a ticket-facts block after ## Checks ends the section",
+      "ticket": "Impact: a visitor sees the cap\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · walk alpha/visitor · x <!-- from impact \"a visitor sees the cap\" -->\n\n<!-- ticket-facts:begin -->\n**Live state**\n- Linear: Verify\n<!-- ticket-facts:end -->",
+      "parse": {
+        "checks": [
+          {
+            "id": "C1",
+            "ticked": false,
+            "kind": "walk",
+            "target": "alpha/visitor",
+            "claim": "x",
+            "quotes": [
+              "a visitor sees the cap"
+            ]
+          }
+        ],
+        "problems": []
+      },
+      "coverage": {
+        "misquoted": [],
+        "uncovered": []
+      }
+    },
+    {
+      "description": "the reconciled marker after ## Checks ends the section",
+      "ticket": "Impact: a visitor sees the cap\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · walk alpha/visitor · x <!-- from impact \"a visitor sees the cap\" -->\n\n<!-- strict:reconciled through=2026-11-07T00:00:00.000Z -->",
+      "parse": {
+        "checks": [
+          {
+            "id": "C1",
+            "ticked": false,
+            "kind": "walk",
+            "target": "alpha/visitor",
+            "claim": "x",
+            "quotes": [
+              "a visitor sees the cap"
+            ]
+          }
+        ],
+        "problems": []
+      },
+      "coverage": {
+        "misquoted": [],
+        "uncovered": []
+      }
+    },
+    {
+      "description": "a generated block straight after the checks, with no blank line, ends the section",
+      "ticket": "Impact: a visitor sees the cap\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · walk alpha/visitor · x <!-- from impact \"a visitor sees the cap\" -->\n<!-- ticket-facts:begin -->\n- not a check\n<!-- ticket-facts:end -->",
+      "parse": {
+        "checks": [
+          {
+            "id": "C1",
+            "ticked": false,
+            "kind": "walk",
+            "target": "alpha/visitor",
+            "claim": "x",
+            "quotes": [
+              "a visitor sees the cap"
+            ]
+          }
+        ],
+        "problems": []
+      },
+      "coverage": {
+        "misquoted": [],
+        "uncovered": []
       }
     },
     {

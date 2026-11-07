@@ -9,7 +9,6 @@ import {
   checksRulesFromEnv,
   checksWriteProblems,
   droppedChecksById,
-  linearChecks,
   notMigrated,
   parseChecksRulebook,
 } from '../checks.js';
@@ -166,6 +165,16 @@ describe('LINEAR_STRICT_CHECKS_TEAMS and LINEAR_STRICT_CHECKS_RULEBOOK', () => {
   });
 });
 
+describe('a rulebook pattern that cannot yield what the interpreter reads', () => {
+  it('refuses a quote_pattern with no capture group, since the group is the quoted Impact text', () => {
+    const rb = JSON.parse(RULEBOOK_TEXT) as { checks: { provenance: Record<string, string> } };
+    rb.checks.provenance['quote_pattern'] = 'impact "[^"]+"';
+    expect(() => parseChecksRulebook(JSON.stringify(rb))).toThrow(
+      'checks.provenance.quote_pattern (a pattern with 1 capture groups)',
+    );
+  });
+});
+
 describe('a ## Checks write on a team that uses one', () => {
   it('refuses a line the rulebook cannot read, and lands one it can', async () => {
     const { strict, state } = setup(withChecks(C1));
@@ -216,6 +225,39 @@ describe('a ## Checks write on a team that uses one', () => {
     expect(asked[0]?.added).toEqual(['C1 · walk alpha/visitor · the reply mentions a limit']);
   });
 
+  it('asks for sign-off on a check whose kind alone changes, since the kind picks the grader', async () => {
+    const { strict, asked } = setup(withChecks(C1, C2));
+    const asMonitor = C1.replace('walk alpha/visitor', 'monitor cap.alert');
+    await strict.setState(
+      'ENG-1',
+      [{ section: 'Checks', mode: 'replace', body: [asMonitor, C2].join('\n') }],
+      SIGNED,
+    );
+    expect(asked[0]?.dropped).toEqual([
+      'C1 · walk alpha/visitor · the reply names the cap (reworded)',
+    ]);
+    expect(asked[0]?.added).toEqual(['C1 · monitor cap.alert · the reply names the cap']);
+  });
+
+  it('asks for sign-off on a check whose target alone changes, such as visitor to staff', async () => {
+    const { strict, asked } = setup(withChecks(C1, C2));
+    await strict.setState(
+      'ENG-1',
+      [
+        {
+          section: 'Checks',
+          mode: 'replace',
+          body: [C1.replace('alpha/visitor', 'www/staff'), C2].join('\n'),
+        },
+      ],
+      SIGNED,
+    );
+    expect(asked[0]?.dropped).toEqual([
+      'C1 · walk alpha/visitor · the reply names the cap (reworded)',
+    ]);
+    expect(asked[0]?.added).toEqual(['C1 · walk www/staff · the reply names the cap']);
+  });
+
   it('refuses a broken ## Checks written through a comment patch, as set_state does', async () => {
     const { strict, state } = setup(withChecks(C1));
     await expect(
@@ -252,6 +294,33 @@ describe('a ## Checks write on a team that uses one', () => {
   });
 });
 
+describe('a generated block after ## Checks', () => {
+  const FACTS =
+    '<!-- ticket-facts:begin -->\n**Live state**\n- Linear: Verify\n<!-- ticket-facts:end -->';
+  const RECONCILED = '<!-- strict:reconciled through=2026-11-07T00:00:00.000Z -->';
+
+  it('ends the section, so a check appended above a Live state block lands', async () => {
+    const { strict, state } = setup(`${withChecks(C1)}\n\n${FACTS}`);
+    await strict.setState('ENG-1', [{ section: 'Checks', mode: 'append', body: C2 }]);
+    expect(state.issue.description).toContain(C2);
+    expect(state.issue.description).toContain(FACTS);
+    expect(fake.parseChecks(state.issue.description)).toMatchObject({ problems: [] });
+  });
+
+  it('ends the section at the reconciled marker, so a migration on a reconciled ticket lands', async () => {
+    const { strict, asked, state } = setup(
+      `${IMPACT}\n\n## Done when\n\n- [ ] the reply names the cap\n\n${RECONCILED}`,
+    );
+    await strict.setState('ENG-1', [
+      { section: 'Checks', mode: 'replace', body: C1 },
+      { section: 'Done when', mode: 'replace', body: '' },
+    ]);
+    expect(asked).toHaveLength(0);
+    expect(state.issue.description).toContain('## Checks');
+    expect(state.issue.description).not.toContain('## Done when');
+  });
+});
+
 describe('a ## Checks section as Linear stores it', () => {
   // Linear hands a ticked item back as "- [X]", whatever was written.
   const ticked = (line: string) => line.replace('- [ ]', '- [X]');
@@ -279,7 +348,7 @@ describe('a ## Checks section as Linear stores it', () => {
       { section: 'Checks', mode: 'append', body: C2 },
     ]);
     expect(state.issue.description).toContain('Impact: a visitor sees the cap and the reset time');
-    expect(linearChecks(fake).parseChecks(withChecks(ticked(C1)))).toMatchObject({
+    expect(fake.parseChecks(withChecks(ticked(C1)))).toMatchObject({
       checks: [{ id: 'C1', ticked: true }],
       problems: [],
     });
@@ -305,6 +374,12 @@ describe('a ## Checks section as Linear stores it', () => {
     expect(asked[0]?.dropped).toEqual(['C2 · eyeball it · fine (retired)']);
     // Repairing the line in place keeps its id: it is not a new one.
     expect(checksWriteProblems(fake, withChecks(C1, unreadable), withChecks(C1, C2))).toEqual([]);
+  });
+
+  it('asks for sign-off before deleting an unreadable check line stored as * \\[X\\]', async () => {
+    const { strict, asked } = setup(withChecks(C1, '* \\[X\\] C2 · eyeball it · fine'));
+    await strict.setState('ENG-1', [{ section: 'Checks', mode: 'replace', body: C1 }], SIGNED);
+    expect(asked[0]?.dropped).toEqual(['C2 · eyeball it · fine (retired)']);
   });
 
   it('refuses a Checks section the rulebook cannot find, rather than reading it as no checks', async () => {
@@ -421,10 +496,23 @@ describe('ids, retirement and migration', () => {
     expect(state.issue.description).toBe(withChecks(C1));
   });
 
+  it('refuses a new id when Linear keeps no document history for the ticket, rather than read it as empty', async () => {
+    const { strict, state } = setup(withChecks(C1), ['ENG'], { snapshots: null });
+    await expect(
+      strict.setState('ENG-1', [{ section: 'Checks', mode: 'append', body: C2 }]),
+    ).rejects.toThrow('Linear returned no document history for this ticket');
+    expect(state.issue.description).toBe(withChecks(C1));
+    // A tick adds no id, so it needs no history.
+    await strict.setState('ENG-1', [
+      { section: 'Checks', mode: 'replace', body: C1.replace('[ ]', '[x]') },
+    ]);
+    expect(state.issue.description).toContain('- [x] C1');
+  });
+
   it('moves a Done when item into ## Checks without sign-off only when its text is the whole claim of exactly one new, unticked check', () => {
     const before = `${IMPACT}\n\n## Done when\n\n- [ ] the flag is on in production`;
     const check = (claim: string, box = ' ') =>
-      `- [${box}] C1 · read posthog-flag cap env=production · ${claim} <!-- from D1 -->`;
+      `- [${box}] C1 · walk alpha/visitor · ${claim} <!-- from D1 -->`;
     const dropped = ['the flag is on in production', 'a walk sees the cap (already ticked)'];
     expect(
       notMigrated(fake, before, withChecks(check('the flag is on in production')), dropped),
@@ -457,6 +545,38 @@ describe('ids, retirement and migration', () => {
         dropped,
       ),
     ).toEqual(dropped);
+  });
+
+  it('moves an item with no sign-off only into a walk check as a visitor: every other kind or profile is a choice a person approves', () => {
+    const before = `${IMPACT}\n\n## Done when\n\n- [ ] a visitor on alpha sees the cap`;
+    const dropped = ['a visitor on alpha sees the cap'];
+    const as = (kindTarget: string) =>
+      withChecks(`- [ ] C1 · ${kindTarget} · a visitor on alpha sees the cap <!-- from D1 -->`);
+    expect(notMigrated(fake, before, as('walk alpha/visitor'), dropped)).toEqual([]);
+    expect(notMigrated(fake, before, as('walk www/visitor'), dropped)).toEqual([]);
+    for (const kindTarget of [
+      'walk alpha/staff',
+      'walk alpha/signed-out',
+      'read posthog-flag cap env=production',
+      'read healthz https://x.test/visitor',
+      'run pr-ci tests/chat.spec.ts:42',
+      'fault none_at_all @preview',
+      'telemetry cap-hits until 2026-12-01',
+      'monitor some-alert',
+    ])
+      expect(notMigrated(fake, before, as(kindTarget), dropped)).toEqual(dropped);
+  });
+
+  it('matches a migrated item to its claim whatever the case and spacing', () => {
+    const before = `${IMPACT}\n\n## Done when\n\n- [ ] The reply  names the cap`;
+    expect(notMigrated(fake, before, withChecks(C1), ['The reply  names the cap'])).toEqual([]);
+  });
+
+  it('migrates nothing on a ticket with two Checks headings, which it cannot read as one section', () => {
+    const before = `${IMPACT}\n\n## Checks\n\nx\n\n### checks\n\ny\n\n## Done when\n\n- [ ] the reply names the cap`;
+    expect(notMigrated(fake, before, withChecks(C1), ['the reply names the cap'])).toEqual([
+      'the reply names the cap',
+    ]);
   });
 
   it('asks for sign-off when a Done when item is dropped beside a check that only negates it', async () => {
@@ -505,6 +625,55 @@ describe('ids, retirement and migration', () => {
   });
 });
 
+describe('the Done gate on a team that uses ## Checks', () => {
+  const done = (description: string, teams = ['ENG']) => {
+    const s = setup(description, teams);
+    return {
+      ...s,
+      close: async () => {
+        await s.strict.claim('ENG-1');
+        return s.strict.setStatus('ENG-1', 'Done');
+      },
+    };
+  };
+  const DONE_WHEN = '## Done when\n\n- [x] the export finishes · run 36087655179';
+
+  it('closes a ticket with only ## Checks once every check is ticked', async () => {
+    const { close, state } = done(withChecks(C1.replace('[ ]', '[x]'), C2.replace('[ ]', '[X]')));
+    await expect(close()).resolves.toMatchObject({ state: 'Done' });
+    expect(state.issue.stateId).toBe('s-done');
+  });
+
+  it('refuses while a check is unticked, even beside a ticked and cited Done when', async () => {
+    const { close, state } = done(`${withChecks(C1.replace('[ ]', '[x]'), C2)}\n\n${DONE_WHEN}`);
+    await expect(close()).rejects.toThrow(/its ## Checks is not done:\n- C2 is not ticked/);
+    expect(state.issue.stateId).toBe('s-todo');
+  });
+
+  it('refuses a ticket with both sections while a Done when item is open, every check ticked', async () => {
+    const { close } = done(
+      `${withChecks(C1.replace('[ ]', '[x]'))}\n\n## Done when\n\n- [ ] the export finishes`,
+    );
+    await expect(close()).rejects.toThrow('1 Done when item is not ticked');
+  });
+
+  it('refuses checks the rulebook cannot read, or that leave an Impact claim uncited', async () => {
+    const unreadable = done(withChecks(C1.replace('[ ]', '[x]'), '- [x] C2 · eyeball it · fine'));
+    await expect(unreadable.close()).rejects.toThrow('Checks: not a check line');
+    const uncovered = done(
+      `Impact: a visitor sees the cap and a reset time\n\n## Checks\n\n${C1.replace('[ ]', '[x]')}`,
+    );
+    await expect(uncovered.close()).rejects.toThrow('Impact claim has no check');
+  });
+
+  it('on a team not listed, still reads only Done when', async () => {
+    const { close } = done(withChecks(C1.replace('[ ]', '[x]')), ['CUR']);
+    await expect(close()).rejects.toThrow('the description has no Done when section');
+    const both = done(`${withChecks(C1)}\n\n${DONE_WHEN}`, ['CUR']);
+    await expect(both.close()).resolves.toMatchObject({ state: 'Done' });
+  });
+});
+
 interface Case {
   description: string;
   ticket: string;
@@ -545,7 +714,7 @@ function conformance(rulebook: () => ChecksModule) {
     const m = rulebook();
     const expected = { parse: c.parse, coverage: c.coverage };
     expect(reading(m, c.ticket)).toEqual(expected);
-    if (c.stored !== undefined) expect(reading(linearChecks(m), c.stored)).toEqual(expected);
+    if (c.stored !== undefined) expect(reading(m, c.stored)).toEqual(expected);
   });
 }
 

@@ -92,11 +92,11 @@ Claude Desktop, in `claude_desktop_config.json`, after the global install above:
 
 Everything except sign-off works the same in any MCP client. Sign-off depends on what the client offers:
 
-| Client | How a descope is approved |
-|---|---|
-| Claude Code with `linear-strict install` | `AskUserQuestion`, with the whole change in its preview box |
-| Claude Code without the hooks | An elicitation form, with rows of about 100 characters |
-| Other clients that support MCP elicitation | That client's elicitation form |
+| Client                                                                      | How a descope is approved                                                              |
+| --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Claude Code with `linear-strict install`                                    | `AskUserQuestion`, with the whole change in its preview box                            |
+| Claude Code without the hooks                                               | An elicitation form, with rows of about 100 characters                                 |
+| Other clients that support MCP elicitation                                  | That client's elicitation form                                                         |
 | Clients without elicitation, Claude Desktop included as far as its docs say | Refused; a person makes the edit in Linear, or run with `LINEAR_STRICT_SIGN_OFF=judge` |
 
 Hooks are a Claude Code feature, so no other client gets the preview route.
@@ -127,24 +127,24 @@ The flow uses PKCE, so a client secret is optional. `auth status` shows whether 
 
 ### Configuration
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `LINEAR_API_TOKEN` | — | Personal API key, or a `lin_oauth_` token (sent as Bearer); `--token` on the command line also works |
-| `LINEAR_OAUTH_ACCESS_TOKEN` | — | Any OAuth access token, sent as Bearer |
-| `LINEAR_STRICT_MAIN_BRANCH` | `main` | Branch a PR must merge into for Done to count as shipped |
-| `LINEAR_STRICT_PRODUCTION_ENV` | `production` | Environment named in `posthog-<env>:` flag labels that counts as live |
-| `LINEAR_STRICT_RELEASE_NOTE_LABELS` | `release-note,release-note-none` | The label pair `release_note` writes, yes first; `off` turns it off. It takes effect only on a team where both labels exist |
-| `LINEAR_STRICT_HANDS_OFF_LABELS` | `no-agents` | Comma-separated labels that make a ticket people-only: every write through this server is refused, reads still work |
-| `LINEAR_STRICT_SIGN_OFF` | `person` | Who approves dropping an unticked `Done when` item: `person` or `judge` ([Sign-off](#sign-off)) |
-| `LINEAR_STRICT_JUDGE_MODEL` | `claude-opus-5-5` | The model that decides when `LINEAR_STRICT_SIGN_OFF=judge` |
-| `LINEAR_STRICT_OVERLAP` | `model` | How `create_issue` finds the open tickets a new one overlaps: `model` has `claude-sonnet-5-5` read every open title on the team when a judge key is set, else Linear's searches; `search` always uses the searches |
-| `ANTHROPIC_API_KEY` | — | The judge's key, if not saved with `auth judge-key set` |
-| `LINEAR_STRICT_CHECKS_TEAMS` | — | Comma-separated team keys whose tickets may carry a `## Checks` section of checks with permanent ids. Set with `LINEAR_STRICT_CHECKS_RULEBOOK`, or neither |
-| `LINEAR_STRICT_CHECKS_RULEBOOK` | — | Path to the project's checks rulebook, a JSON file ([below](#checks-rulebook)). Read once at startup, with its sha256 logged to stderr, so a change takes effect on restart. Setting only one of the two variables, or a rulebook that is missing, unreadable, not JSON or lacks a required field, leaves `## Checks` off for every team and logs one line saying why |
-| `LINEAR_STRICT_STATE_DIR` | `$XDG_STATE_HOME/linear-strict` | Where claim records and pending sign-offs are kept |
-| `LINEAR_STRICT_CONFIG_DIR` | `$XDG_CONFIG_HOME/linear-strict` | Where `auth login` stores credentials |
-| `LINEAR_STRICT_SINGLE_INSTANCE` | `1` | `0` turns off the check that lets a replaced server exit ([below](#one-server-per-connection)) |
-| `LINEAR_STRICT_DEBUG` | — | `1` logs startup detail to stderr |
+| Variable                            | Default                          | Purpose                                                                                                                                                                                                                                                                                                                                                               |
+| ----------------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `LINEAR_API_TOKEN`                  | —                                | Personal API key, or a `lin_oauth_` token (sent as Bearer); `--token` on the command line also works                                                                                                                                                                                                                                                                  |
+| `LINEAR_OAUTH_ACCESS_TOKEN`         | —                                | Any OAuth access token, sent as Bearer                                                                                                                                                                                                                                                                                                                                |
+| `LINEAR_STRICT_MAIN_BRANCH`         | `main`                           | Branch a PR must merge into for Done to count as shipped                                                                                                                                                                                                                                                                                                              |
+| `LINEAR_STRICT_PRODUCTION_ENV`      | `production`                     | Environment named in `posthog-<env>:` flag labels that counts as live                                                                                                                                                                                                                                                                                                 |
+| `LINEAR_STRICT_RELEASE_NOTE_LABELS` | `release-note,release-note-none` | The label pair `release_note` writes, yes first; `off` turns it off. It takes effect only on a team where both labels exist                                                                                                                                                                                                                                           |
+| `LINEAR_STRICT_HANDS_OFF_LABELS`    | `no-agents`                      | Comma-separated labels that make a ticket people-only: every write through this server is refused, reads still work                                                                                                                                                                                                                                                   |
+| `LINEAR_STRICT_SIGN_OFF`            | `person`                         | Who approves dropping an unticked `Done when` item: `person` or `judge` ([Sign-off](#sign-off))                                                                                                                                                                                                                                                                       |
+| `LINEAR_STRICT_JUDGE_MODEL`         | `claude-opus-5-5`                | The model that decides when `LINEAR_STRICT_SIGN_OFF=judge`                                                                                                                                                                                                                                                                                                            |
+| `LINEAR_STRICT_OVERLAP`             | `model`                          | How `create_issue` finds the open tickets a new one overlaps: `model` has `claude-sonnet-5-5` read every open title on the team when a judge key is set, else Linear's searches; `search` always uses the searches                                                                                                                                                    |
+| `ANTHROPIC_API_KEY`                 | —                                | The judge's key, if not saved with `auth judge-key set`                                                                                                                                                                                                                                                                                                               |
+| `LINEAR_STRICT_CHECKS_TEAMS`        | —                                | Comma-separated team keys whose tickets may carry a `## Checks` section of checks with permanent ids. Set with `LINEAR_STRICT_CHECKS_RULEBOOK`, or neither                                                                                                                                                                                                            |
+| `LINEAR_STRICT_CHECKS_RULEBOOK`     | —                                | Path to the project's checks rulebook, a JSON file ([below](#checks-rulebook)). Read once at startup, with its sha256 logged to stderr, so a change takes effect on restart. Setting only one of the two variables, or a rulebook that is missing, unreadable, not JSON or lacks a required field, leaves `## Checks` off for every team and logs one line saying why |
+| `LINEAR_STRICT_STATE_DIR`           | `$XDG_STATE_HOME/linear-strict`  | Where claim records and pending sign-offs are kept                                                                                                                                                                                                                                                                                                                    |
+| `LINEAR_STRICT_CONFIG_DIR`          | `$XDG_CONFIG_HOME/linear-strict` | Where `auth login` stores credentials                                                                                                                                                                                                                                                                                                                                 |
+| `LINEAR_STRICT_SINGLE_INSTANCE`     | `1`                              | `0` turns off the check that lets a replaced server exit ([below](#one-server-per-connection))                                                                                                                                                                                                                                                                        |
+| `LINEAR_STRICT_DEBUG`               | —                                | `1` logs startup detail to stderr                                                                                                                                                                                                                                                                                                                                     |
 
 Claim records live on the machine running the server. A Done check from a machine with no claim on record is refused.
 
@@ -163,7 +163,9 @@ Claim records live on the machine running the server. A Done check from a machin
 | `coverage.stopwords`          | string[]                | Words that never need an Impact quote                                                            |
 | `coverage.min_word_length`    | integer                 | Shorter words never need one either                                                              |
 
-Patterns are JavaScript regular expressions with no flags. Coverage normalises text by lower-casing it and turning each run of characters that are not letters or digits into one space. An Impact beginning `none` claims only what follows its first colon, or nothing without one.
+Patterns are JavaScript regular expressions with no flags. They must run in linear time (no nested quantifiers such as `(a+)+`, no overlapping alternatives under a repeat): the server runs them on every write, on one thread, so a pattern that backtracks on a long line stalls every tool call. Coverage normalises text by lower-casing it and turning each run of characters that are not letters or digits into one space. An Impact beginning `none` claims only what follows its first colon, or nothing without one.
+
+On a listed team, a ticket with `## Checks` moves to a completed state only when every check reads under the rulebook, the Impact is covered and every check is ticked; a check carries no citation on its line, since text after its claim is a reword, so its evidence is wherever the project's grader records it. A ticket with both `## Checks` and `Done when` must satisfy both. A Done when item moves into `## Checks` with no sign-off only as the whole claim of one new check of kind `walk` whose target ends in `/visitor` (a rulebook with no such kind gets no exemption); any other kind or target is a choice someone approves. A write that adds an id is refused when Linear returns no document history for the ticket, since a retired id could not be ruled out.
 
 `src/__tests__/fixtures/checks-conformance.json` holds cases with expected readings, for any other implementation of the same rules to test itself against. `LINEAR_STRICT_CHECKS_RULEBOOK_TEST=<path> npm run test:unit` runs them against another rulebook.
 
@@ -173,30 +175,30 @@ Claude Code's `/mcp` reconnect starts a new server and leaves the old one runnin
 
 ## Reconciled marker
 
-Each ticket this server has reconciled carries one attachment titled "linear-strict: description reconciled through *date*". It records the last comment the description accounts for, when that was checked, and a hash of the description at the time, so the next agent to read the ticket knows which comments are new and whether the description was edited elsewhere since. Deleting it does no harm: agents then check the whole thread again, and the next reconcile puts it back. It is written by whoever runs this server, not by Linear.
+Each ticket this server has reconciled carries one attachment titled "linear-strict: description reconciled through _date_". It records the last comment the description accounts for, when that was checked, and a hash of the description at the time, so the next agent to read the ticket knows which comments are new and whether the description was edited elsewhere since. Deleting it does no harm: agents then check the whole thread again, and the next reconcile puts it back. It is written by whoever runs this server, not by Linear.
 
 ## Tools
 
-| Tool | What it does |
-|---|---|
-| `get_issue` | Whole ticket, plus `findings`, `drift`, `pull_requests`, `releases`, `claim` and `omitted` |
-| `description_history` | Past versions of the description with who made each and a diff; `blame` names the version behind every current line |
-| `list_issues` | Every matching ticket in one call, paged to the end by the server: identifier, title, state, assignee, delegate and `updatedAt`, filterable by team, state, open, cycle and project; no description excerpts |
-| `claim` | Take a ticket and snapshot its description; refuses one another agent holds |
-| `check_claim` | Whether the description changed since your claim, with a diff |
-| `set_state` | Patch description sections and/or move the reconciled marker |
-| `comment` | Typed comment: `evidence`, `correction`, `ask`, `answer`, `closed_by` |
-| `set_status` | Move to a workflow state; completed states pass the Done gate |
-| `set_fields` | Priority, owner, labels, cycle, project, milestone, parent, dates, relations and linked PRs; never the description or state |
-| `create_issue` | New ticket with validated sections, under a parent or in a project, placed against the closest open tickets |
-| `list_teams` | Teams with their workflow states in board order |
-| `list_cycles` | Cycles, active and next by default; pair a number with `list_issues` |
-| `list_projects`, `list_initiatives` | Open projects and initiatives with status, owner and dates |
-| `notifications` | Your inbox as pointers (ticket, type, actor, time), no excerpt text, paginated |
-| `get_principal_notifications` | The same, for the human this identity acts for, on their own credential — needs `LINEAR_PRINCIPAL_TOKEN`/`LINEAR_PRINCIPAL_ID` configured |
-| `mark_principal_notifications_read` | Mark the principal's notifications read: ones `get_principal_notifications` returned, by id or every one an agent caused |
-| `mark_notifications_read` | Mark handled notifications read |
-| `whoami` | The user or app behind the token, which is who claims and `_is_me` filters mean |
+| Tool                                | What it does                                                                                                                                                                                                 |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `get_issue`                         | Whole ticket, plus `findings`, `drift`, `pull_requests`, `releases`, `claim` and `omitted`                                                                                                                   |
+| `description_history`               | Past versions of the description with who made each and a diff; `blame` names the version behind every current line                                                                                          |
+| `list_issues`                       | Every matching ticket in one call, paged to the end by the server: identifier, title, state, assignee, delegate and `updatedAt`, filterable by team, state, open, cycle and project; no description excerpts |
+| `claim`                             | Take a ticket and snapshot its description; refuses one another agent holds                                                                                                                                  |
+| `check_claim`                       | Whether the description changed since your claim, with a diff                                                                                                                                                |
+| `set_state`                         | Patch description sections and/or move the reconciled marker                                                                                                                                                 |
+| `comment`                           | Typed comment: `evidence`, `correction`, `ask`, `answer`, `closed_by`                                                                                                                                        |
+| `set_status`                        | Move to a workflow state; completed states pass the Done gate                                                                                                                                                |
+| `set_fields`                        | Priority, owner, labels, cycle, project, milestone, parent, dates, relations and linked PRs; never the description or state                                                                                  |
+| `create_issue`                      | New ticket with validated sections, under a parent or in a project, placed against the closest open tickets                                                                                                  |
+| `list_teams`                        | Teams with their workflow states in board order                                                                                                                                                              |
+| `list_cycles`                       | Cycles, active and next by default; pair a number with `list_issues`                                                                                                                                         |
+| `list_projects`, `list_initiatives` | Open projects and initiatives with status, owner and dates                                                                                                                                                   |
+| `notifications`                     | Your inbox as pointers (ticket, type, actor, time), no excerpt text, paginated                                                                                                                               |
+| `get_principal_notifications`       | The same, for the human this identity acts for, on their own credential — needs `LINEAR_PRINCIPAL_TOKEN`/`LINEAR_PRINCIPAL_ID` configured                                                                    |
+| `mark_principal_notifications_read` | Mark the principal's notifications read: ones `get_principal_notifications` returned, by id or every one an agent caused                                                                                     |
+| `mark_notifications_read`           | Mark handled notifications read                                                                                                                                                                              |
+| `whoami`                            | The user or app behind the token, which is who claims and `_is_me` filters mean                                                                                                                              |
 
 The server also returns these rules as MCP `instructions` on `initialize`, so an agent learns the workflow when it connects. [`TOOLS.md`](./TOOLS.md) has each tool's arguments, and [`docs/design.md`](./docs/design.md) the reasoning behind the rules, their limits, and what is still open.
 
@@ -230,15 +232,15 @@ linear-strict audit check --export eng.jsonl --repo ~/src/app
 
 `check` reads that file and a git checkout and makes no network calls. Each citation is dated by the description version or comment it first appears in, then compared with the cited branch (`--ref`, default `origin/main`; a repo that lands work on a branch such as `develop` before main passes that) as it was on that date and as it is now:
 
-| Verdict | Meaning |
-|---|---|
-| `holds` | The cited lines read the same today |
-| `moved` | The same lines are elsewhere in the file now; the finding gives the new line |
-| `changed` | The cited lines say something else now; the finding gives both |
-| `file_gone` | The file is no longer on the branch |
-| `trivial_line` | The cited line is a brace or blank, so it can't anchor anything |
+| Verdict                                             | Meaning                                                                                               |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `holds`                                             | The cited lines read the same today                                                                   |
+| `moved`                                             | The same lines are elsewhere in the file now; the finding gives the new line                          |
+| `changed`                                           | The cited lines say something else now; the finding gives both                                        |
+| `file_gone`                                         | The file is no longer on the branch                                                                   |
+| `trivial_line`                                      | The cited line is a brace or blank, so it can't anchor anything                                       |
 | `line_missing_when_cited`, `not_in_tree_when_cited` | The branch didn't have that line or file on the day it was cited, so it was cited from somewhere else |
-| `ambiguous_path` | More than one file ends with the cited path |
+| `ambiguous_path`                                    | More than one file ends with the cited path                                                           |
 
 A commit-shaped hex string is `on_main`, `off_main` (`--main`, default `origin/main`), or `not_a_commit_here`, which is often a different kind of id: a comment, a request, a deployment. `--json` prints every finding; `--issue` narrows to named tickets.
 

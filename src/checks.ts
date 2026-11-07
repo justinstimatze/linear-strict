@@ -5,7 +5,8 @@
  *
  * The grammar, the per-kind targets and the Impact coverage constants are data: the project's
  * rulebook, a JSON file named by LINEAR_STRICT_CHECKS_RULEBOOK and read once at startup. This file is
- * the one interpreter for it. The server never loads project code; a project that grades tickets with
+ * the one interpreter for it. It reads a description as Linear stores it as well as it was written
+ * (see asWritten). The server never loads project code; a project that grades tickets with
  * its own implementation of the same rules keeps the two in step with the conformance fixtures
  * (src/__tests__/fixtures/checks-conformance.json).
  *
@@ -14,7 +15,7 @@
  */
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { readSection } from './sections.js';
+import { BOUNDARY, readSection } from './sections.js';
 
 export interface Check {
   id: string;
@@ -133,13 +134,17 @@ export function parseChecksRulebook(text: string): ChecksRulebook {
   };
 }
 
-/** The lines under the rulebook's exact heading, up to the next heading; null when it is absent. */
+/**
+ * The lines under the rulebook's exact heading, up to the next heading or the next generated block
+ * (sections.ts BOUNDARY: a tool's `<!-- name:begin -->` or the reconciled marker), where every
+ * section ends; null when the heading is absent.
+ */
 function sectionOf(description: string, heading: string): string[] | null {
   const lines = description.split('\n');
   const start = lines.findIndex((l) => l.trim() === heading);
   if (start === -1) return null;
   const rest = lines.slice(start + 1);
-  const end = rest.findIndex((l) => /^#{1,6}\s/.test(l));
+  const end = rest.findIndex((l) => /^#{1,6}\s/.test(l) || BOUNDARY.test(l));
   return end === -1 ? rest : rest.slice(0, end);
 }
 
@@ -168,7 +173,7 @@ export function checksInterpreter(rb: ChecksRulebook): ChecksModule {
     impactLine: readImpactLine,
 
     parseChecks(description) {
-      const lines = sectionOf(description, rb.section);
+      const lines = sectionOf(asWritten(description), rb.section);
       if (lines === null) return null;
       const checks: Check[] = [];
       const problems: string[] = [];
@@ -301,17 +306,12 @@ function loadRules(
   }
 }
 
-/**
- * The interpreter to read a team's ## Checks with, or undefined on a team that does not use one. It reads
- * descriptions as Linear stores them (see linearChecks).
- */
+/** The interpreter to read a team's ## Checks with, or undefined on a team that does not use one. */
 export function checksApply(
   rules: ChecksRules | undefined,
   teamKey: string | undefined,
 ): ChecksModule | undefined {
-  return rules && teamKey && rules.teams.includes(teamKey.toUpperCase())
-    ? linearChecks(rules.module)
-    : undefined;
+  return rules && teamKey && rules.teams.includes(teamKey.toUpperCase()) ? rules.module : undefined;
 }
 
 // A check line as Linear hands it back: a `*` or `-` bullet, a box Linear may escape, and a tick it
@@ -322,7 +322,8 @@ const STORED_CHECK = /^(\s*)[-*]\s+\\?\[([ xX])\\?\]\s+(?=C[1-9])/;
  * A description with its check lines in the form a check is written in. Linear stores a ticked item
  * as `- [X]`, a bullet as `*`, and escapes `[`, `]`, `~` and `*` in plain text, so a check written as
  * `- [x] C1 · …` comes back from the next read in a form the line pattern may not read. Only lines that
- * are checklist items naming a C<n> id are touched.
+ * are checklist items naming a C<n> id are touched. A project's own interpreter of the rulebook applies
+ * the same function, so the conformance fixtures' stored forms read the same in both.
  */
 export function asWritten(description: string): string {
   return description
@@ -337,27 +338,11 @@ export function asWritten(description: string): string {
     .join('\n');
 }
 
-/** The interpreter, reading every description through asWritten. */
-export function linearChecks(m: ChecksModule): ChecksModule {
-  return {
-    section: m.section,
-    parseChecks: (description) => m.parseChecks(asWritten(description)),
-    impactCoverage: (impact, checks) => m.impactCoverage(impact, checks),
-    impactLine: (description) => m.impactLine(asWritten(description)),
-  };
-}
-
 const idNumber = (id: string) => Number(id.slice(1));
 
-/** The ## Checks section's lines, under the exact heading the rulebook names, up to the next heading. */
-function checksLines(m: ChecksModule, description: string): string[] | null {
-  const lines = asWritten(description).split('\n');
-  const start = lines.findIndex((l) => l.trim() === m.section);
-  if (start === -1) return null;
-  const rest = lines.slice(start + 1);
-  const end = rest.findIndex((l) => /^#{1,6}\s/.test(l));
-  return end === -1 ? rest : rest.slice(0, end);
-}
+/** The ## Checks section's lines in the form they were written in, over the span parseChecks reads. */
+const checksLines = (m: ChecksModule, description: string) =>
+  sectionOf(asWritten(description), m.section);
 
 const ID_LINE = /^- \[[ x]\] (C[1-9][0-9]*)\b(.*)$/;
 
@@ -421,6 +406,22 @@ function contentProblems(m: ChecksModule, description: string): string[] {
     problems.push(
       `Impact claim has no check: no check quotes ${uncovered.map((w) => `"${w}"`).join(', ')}. Cite the clause with <!-- from impact "…" --> on the check that proves it, add a check, or narrow the Impact.`,
     );
+  return problems;
+}
+
+/**
+ * Why the Done gate refuses a ticket's ## Checks, or null when it has none. Every check must read under
+ * the rulebook, the Impact must be covered, and every check must be ticked. A check carries no citation
+ * on its line, since anything added after its claim is a reword: its evidence is its kind's record
+ * (a walk's grade, a reader's value, a run's result), which the project's grader reads.
+ */
+export function checksDoneProblems(m: ChecksModule, description: string): string[] | null {
+  const parsed = m.parseChecks(description);
+  if (parsed === null && !hasSection(description, 'Checks')) return null;
+  const problems = contentProblems(m, description);
+  if (parsed?.checks.length === 0) problems.push('Checks: the section lists no check');
+  for (const c of parsed?.checks ?? [])
+    if (!c.ticked) problems.push(`${c.id} is not ticked: ${c.line}`);
   return problems;
 }
 
@@ -495,11 +496,28 @@ const sameText = (a: string, b: string) =>
   a.replace(/\s+/g, ' ').trim().toLowerCase() === b.replace(/\s+/g, ' ').trim().toLowerCase();
 
 /**
+ * Whether a Done when item may move into this check with no sign-off. The item's text says nothing
+ * about how it is proved, so the kind and target are the migrating agent's choice, and the kind picks
+ * the grader: a run, read, fault, telemetry or monitor check is closed by the grader's own proof. Only
+ * the check an unmigrated item would have had passes through: a fresh walker on either host, as a
+ * visitor. Any other kind or profile is a choice a person approves. The whole exemption is this
+ * function; returning false sends every migrated item to sign-off.
+ */
+function migrationExempt(item: string, check: Check, wasTicked: boolean): boolean {
+  return (
+    sameText(check.claim, item) &&
+    (wasTicked || !check.ticked) &&
+    check.kind === 'walk' &&
+    check.target.endsWith('/visitor')
+  );
+}
+
+/**
  * Of the Done when items a write drops, the ones it did not carry into ## Checks. Only a migration
  * moves items: a write that removes Done when and adds ## Checks in the same step. An item moved when
  * its text, its citation aside, is the whole claim of exactly one check this write adds, and that
- * check is not ticked unless the item was. Every other dropped item, and every item in any other
- * write, still needs sign-off.
+ * check passes migrationExempt. Every other dropped item, and every item in any other write, still
+ * needs sign-off.
  */
 export function notMigrated(
   m: ChecksModule,
@@ -519,6 +537,7 @@ export function notMigrated(
     const wasTicked = item.endsWith(' (already ticked)');
     const text = item.replace(/ \(already ticked\)$/, '');
     const matches = added.filter((c) => sameText(c.claim, text));
-    return !(matches.length === 1 && (wasTicked || !matches[0]?.ticked));
+    const [only] = matches;
+    return !(matches.length === 1 && only && migrationExempt(text, only, wasTicked));
   });
 }
