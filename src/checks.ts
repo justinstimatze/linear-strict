@@ -158,10 +158,10 @@ function readImpactLine(description: string): string | null {
 }
 
 /**
- * Only an Impact whose first word is exactly "none", ended by the line or by ":", "," or ".", says the
- * work reached nobody. "none of the visitors can lose their history" is a claim like any other.
+ * Only an Impact whose first word is "none" can say the work reached nobody, and "none of …" does not:
+ * "none of the visitors can lose their history" is a claim like any other, as is "nonetheless …".
  */
-const saysNone = (impact: string) => /^\W*none(?=$|[:,.])/i.test(impact);
+const saysNone = (impact: string) => /^\W*none\b(?!\s+of\b)/i.test(impact);
 
 /**
  * Text without default-ignorable code points (soft hyphen, zero-width space and joiners, word joiner,

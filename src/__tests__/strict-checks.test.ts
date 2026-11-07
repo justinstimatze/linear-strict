@@ -763,17 +763,21 @@ describe('an Impact that says none', () => {
       .uncovered;
   };
 
-  it('exempts only "none" as the whole first word, ended by the line, ":", "," or "."', () => {
+  it('exempts the opening clause of an Impact whose first word is "none"; after its first colon is a claim', () => {
     expect(uncovered('none')).toEqual([]);
     expect(uncovered('none.')).toEqual([]);
     expect(uncovered('none, internal tooling only')).toEqual([]);
+    expect(uncovered('none for visitors')).toEqual([]);
+    expect(uncovered('none yet, no fix shipped')).toEqual([]);
+    expect(uncovered('none for visitors: but staff see the cap')).toEqual(['staff']);
     expect(uncovered('none: but staff see the cap')).toEqual(['staff']);
   });
 
-  it('reads "none of …" as a claim like any other', () => {
+  it('reads "none of …" and a word that only starts with none as a claim like any other', () => {
     expect(
       uncovered('none of the forty thousand visitors can lose their chat history any more'),
     ).toEqual(['none', 'forty', 'thousand', 'visitors', 'lose', 'chat', 'history']);
+    expect(uncovered('None Of the visitors can sign in')).toEqual(['none', 'visitors', 'sign']);
     expect(uncovered('nonetheless visitors see the cap')).toEqual(['nonetheless', 'visitors']);
   });
 });

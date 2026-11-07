@@ -234,7 +234,7 @@
     },
     {
       "description": "walk kind, staff on www",
-      "ticket": "Impact: none\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · walk www/staff · the admin page lists it <!-- from D1 -->",
+      "ticket": "Impact: none for visitors\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · walk www/staff · the admin page lists it <!-- from D1 -->",
       "parse": {
         "checks": [
           {
@@ -675,7 +675,7 @@
     },
     {
       "description": "\"none\" Impact with a colon: the tail is a claim, quoted",
-      "ticket": "Impact: none: a grader reads ids\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · walk alpha/visitor · x <!-- from impact \"a grader reads ids\" -->",
+      "ticket": "Impact: none for visitors: a grader reads ids\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · walk alpha/visitor · x <!-- from impact \"a grader reads ids\" -->",
       "parse": {
         "checks": [
           {
@@ -698,7 +698,7 @@
     },
     {
       "description": "\"none\" Impact with a colon: the tail is a claim, unquoted",
-      "ticket": "Impact: none: a grader reads ids\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · read healthz a · 200 <!-- from D1 -->",
+      "ticket": "Impact: none for visitors: a grader reads ids\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · read healthz a · 200 <!-- from D1 -->",
       "parse": {
         "checks": [
           {
@@ -722,7 +722,7 @@
     },
     {
       "description": "\"none\" Impact with no colon claims nothing",
-      "ticket": "Impact: none, no fix shipped yet\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · read healthz a · 200 <!-- from D1 -->",
+      "ticket": "Impact: none yet, no fix shipped\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · read healthz a · 200 <!-- from D1 -->",
       "parse": {
         "checks": [
           {
@@ -790,8 +790,29 @@
       }
     },
     {
-      "description": "\"none\" followed by a word is a claim like any other",
+      "description": "\"none\" followed by a word other than \"of\" claims nothing",
       "ticket": "Impact: none for visitors\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · read healthz a · 200 <!-- from D1 -->",
+      "parse": {
+        "checks": [
+          {
+            "id": "C1",
+            "ticked": false,
+            "kind": "read",
+            "target": "healthz a",
+            "claim": "200",
+            "quotes": []
+          }
+        ],
+        "problems": []
+      },
+      "coverage": {
+        "misquoted": [],
+        "uncovered": []
+      }
+    },
+    {
+      "description": "\"None Of …\" in any case is a claim like any other",
+      "ticket": "Impact: None Of the visitors can sign in\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · read healthz a · 200 <!-- from D1 -->",
       "parse": {
         "checks": [
           {
@@ -809,7 +830,8 @@
         "misquoted": [],
         "uncovered": [
           "none",
-          "visitors"
+          "visitors",
+          "sign"
         ]
       }
     },
