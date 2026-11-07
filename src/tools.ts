@@ -138,7 +138,7 @@ const PATCH_SCHEMA = {
 // On a server whose LINEAR_STRICT_CHECKS_TEAMS is set, a patch may also name Checks (checks.ts).
 const CHECKS_PATCH_SCHEMA = {
   ...PATCH_SCHEMA,
-  description: `${PATCH_SCHEMA.description} Checks, on the teams that use one, holds checks with permanent ids ("- [ ] C1 · <kind> <target> · <claim> <!-- from … -->"); emptying Done when removes it once Checks carries its items.`,
+  description: `${PATCH_SCHEMA.description} Checks, on the teams that use one, holds checks with permanent ids ("- [ ] C1 · <kind> <target> · <claim> <!-- from … -->"); emptying Done when removes it once Checks carries its items. A check is written unticked and ticked only by the project's grader, which also closes the ticket; a write here that ticks one is refused.`,
   items: {
     ...PATCH_SCHEMA.items,
     properties: {

@@ -199,10 +199,10 @@ describe('a ## Checks write on a team that uses one', () => {
     ).rejects.toThrow('C1 quotes "a visitor sees the cap", which the Impact line does not say');
   });
 
-  it('asks for sign-off on a reworded or retired check, by id, and not on a tick or a new check', async () => {
-    const { strict, asked } = setup(withChecks(C1, C2));
+  it('asks for sign-off on a reworded or retired check, by id, and not on an untick or a new check', async () => {
+    const { strict, asked } = setup(withChecks(C1.replace('[ ]', '[X]'), C2));
     await strict.setState('ENG-1', [
-      { section: 'Checks', mode: 'replace', body: [C1.replace('[ ]', '[x]'), C2].join('\n') },
+      { section: 'Checks', mode: 'replace', body: [C1, C2].join('\n') },
     ]);
     expect(asked).toHaveLength(0);
     await strict.setState(
@@ -497,26 +497,25 @@ describe('ids, retirement and migration', () => {
   });
 
   it('refuses a new id when Linear keeps no document history for the ticket, rather than read it as empty', async () => {
-    const { strict, state } = setup(withChecks(C1), ['ENG'], { snapshots: null });
+    const ticked = withChecks(C1.replace('[ ]', '[X]'));
+    const { strict, state } = setup(ticked, ['ENG'], { snapshots: null });
     await expect(
       strict.setState('ENG-1', [{ section: 'Checks', mode: 'append', body: C2 }]),
     ).rejects.toThrow('Linear returned no document history for this ticket');
-    expect(state.issue.description).toBe(withChecks(C1));
-    // A tick adds no id, so it needs no history.
-    await strict.setState('ENG-1', [
-      { section: 'Checks', mode: 'replace', body: C1.replace('[ ]', '[x]') },
-    ]);
-    expect(state.issue.description).toContain('- [x] C1');
+    expect(state.issue.description).toBe(ticked);
+    // An untick adds no id, so it needs no history.
+    await strict.setState('ENG-1', [{ section: 'Checks', mode: 'replace', body: C1 }]);
+    expect(state.issue.description).toContain('- [ ] C1');
   });
 
   it('moves a Done when item into ## Checks without sign-off only when its text is the whole claim of exactly one new, unticked check', () => {
-    const before = `${IMPACT}\n\n## Done when\n\n- [ ] the flag is on in production`;
+    const before = `${IMPACT}\n\n## Done when\n\n- [ ] the flag is on in production\n- [x] a walk sees the cap · run 1`;
     const check = (claim: string, box = ' ') =>
       `- [${box}] C1 · walk alpha/visitor · ${claim} <!-- from D1 -->`;
     const dropped = ['the flag is on in production', 'a walk sees the cap (already ticked)'];
-    expect(
-      notMigrated(fake, before, withChecks(check('the flag is on in production')), dropped),
-    ).toEqual(['a walk sees the cap (already ticked)']);
+    expect(notMigrated(fake, before, withChecks(check('the flag is on in production')))).toEqual([
+      'a walk sees the cap (already ticked)',
+    ]);
     // Narrowed, negated, arriving ticked, or split across two checks: not a move.
     for (const after of [
       withChecks(
@@ -527,14 +526,13 @@ describe('ids, retirement and migration', () => {
       withChecks(check('it is not true that the flag is on in production')),
       withChecks(check('the flag is on in production', 'x')),
     ])
-      expect(notMigrated(fake, before, after, dropped)).toEqual(dropped);
+      expect(notMigrated(fake, before, after)).toEqual(dropped);
     // A write that keeps Done when, or a ticket that already had Checks, migrates nothing.
     expect(
       notMigrated(
         fake,
         before,
         `${withChecks(check('the flag is on in production'))}\n\n## Done when\n\n- [ ] other`,
-        dropped,
       ),
     ).toEqual(dropped);
     expect(
@@ -542,9 +540,24 @@ describe('ids, retirement and migration', () => {
         fake,
         `${withChecks(check('the flag is on in production'))}\n\n## Done when\n\n- [ ] x`,
         withChecks(check('the flag is on in production')),
-        dropped,
       ),
-    ).toEqual(dropped);
+    ).toEqual(['x']);
+  });
+
+  it('moves a ticked Done when item only into an unticked check: its tick does not carry over', () => {
+    const before = `${IMPACT}\n\n## Done when\n\n- [x] the reply names the cap · run 1`;
+    expect(notMigrated(fake, before, withChecks(C1))).toEqual([]);
+    expect(notMigrated(fake, before, withChecks(C1.replace('[ ]', '[x]')))).toEqual([
+      'the reply names the cap (already ticked)',
+    ]);
+  });
+
+  it('reads whether an item was ticked from its line, never from text that ends in "(already ticked)"', () => {
+    const before = `${IMPACT}\n\n## Done when\n\n- [ ] the reply names the cap (already ticked)`;
+    // The item's whole text is its claim: a check that leaves the suffix off says something else.
+    expect(notMigrated(fake, before, withChecks(C1))).toEqual([
+      'the reply names the cap (already ticked)',
+    ]);
   });
 
   it('moves an item with no sign-off only into a walk check as a visitor: every other kind or profile is a choice a person approves', () => {
@@ -552,8 +565,8 @@ describe('ids, retirement and migration', () => {
     const dropped = ['a visitor on alpha sees the cap'];
     const as = (kindTarget: string) =>
       withChecks(`- [ ] C1 · ${kindTarget} · a visitor on alpha sees the cap <!-- from D1 -->`);
-    expect(notMigrated(fake, before, as('walk alpha/visitor'), dropped)).toEqual([]);
-    expect(notMigrated(fake, before, as('walk www/visitor'), dropped)).toEqual([]);
+    expect(notMigrated(fake, before, as('walk alpha/visitor'))).toEqual([]);
+    expect(notMigrated(fake, before, as('walk www/visitor'))).toEqual([]);
     for (const kindTarget of [
       'walk alpha/staff',
       'walk alpha/signed-out',
@@ -564,19 +577,17 @@ describe('ids, retirement and migration', () => {
       'telemetry cap-hits until 2026-12-01',
       'monitor some-alert',
     ])
-      expect(notMigrated(fake, before, as(kindTarget), dropped)).toEqual(dropped);
+      expect(notMigrated(fake, before, as(kindTarget))).toEqual(dropped);
   });
 
   it('matches a migrated item to its claim whatever the case and spacing', () => {
     const before = `${IMPACT}\n\n## Done when\n\n- [ ] The reply  names the cap`;
-    expect(notMigrated(fake, before, withChecks(C1), ['The reply  names the cap'])).toEqual([]);
+    expect(notMigrated(fake, before, withChecks(C1))).toEqual([]);
   });
 
   it('migrates nothing on a ticket with two Checks headings, which it cannot read as one section', () => {
     const before = `${IMPACT}\n\n## Checks\n\nx\n\n### checks\n\ny\n\n## Done when\n\n- [ ] the reply names the cap`;
-    expect(notMigrated(fake, before, withChecks(C1), ['the reply names the cap'])).toEqual([
-      'the reply names the cap',
-    ]);
+    expect(notMigrated(fake, before, withChecks(C1))).toEqual(['the reply names the cap']);
   });
 
   it('asks for sign-off when a Done when item is dropped beside a check that only negates it', async () => {
@@ -637,40 +648,221 @@ describe('the Done gate on a team that uses ## Checks', () => {
     };
   };
   const DONE_WHEN = '## Done when\n\n- [x] the export finishes · run 36087655179';
+  const GRADER = 'the grader closes tickets with Checks once every check has its evidence';
+  const ticked = (line: string) => line.replace('[ ]', '[x]');
 
-  it('closes a ticket with only ## Checks once every check is ticked', async () => {
-    const { close, state } = done(withChecks(C1.replace('[ ]', '[x]'), C2.replace('[ ]', '[X]')));
-    await expect(close()).resolves.toMatchObject({ state: 'Done' });
-    expect(state.issue.stateId).toBe('s-done');
-  });
-
-  it('refuses while a check is unticked, even beside a ticked and cited Done when', async () => {
-    const { close, state } = done(`${withChecks(C1.replace('[ ]', '[x]'), C2)}\n\n${DONE_WHEN}`);
-    await expect(close()).rejects.toThrow(/its ## Checks is not done:\n- C2 is not ticked/);
+  it('never closes a ticket with ## Checks, even with every check ticked: the grader closes it', async () => {
+    const { close, state } = done(withChecks(ticked(C1), C2.replace('[ ]', '[X]')));
+    await expect(close()).rejects.toThrow(GRADER);
     expect(state.issue.stateId).toBe('s-todo');
   });
 
-  it('refuses a ticket with both sections while a Done when item is open, every check ticked', async () => {
-    const { close } = done(
-      `${withChecks(C1.replace('[ ]', '[x]'))}\n\n## Done when\n\n- [ ] the export finishes`,
-    );
-    await expect(close()).rejects.toThrow('1 Done when item is not ticked');
+  it('never closes one beside a ticked and cited Done when either', async () => {
+    const { close, state } = done(`${withChecks(ticked(C1), ticked(C2))}\n\n${DONE_WHEN}`);
+    await expect(close()).rejects.toThrow(GRADER);
+    expect(state.issue.stateId).toBe('s-todo');
   });
 
-  it('refuses checks the rulebook cannot read, or that leave an Impact claim uncited', async () => {
-    const unreadable = done(withChecks(C1.replace('[ ]', '[x]'), '- [x] C2 · eyeball it · fine'));
-    await expect(unreadable.close()).rejects.toThrow('Checks: not a check line');
-    const uncovered = done(
-      `Impact: a visitor sees the cap and a reset time\n\n## Checks\n\n${C1.replace('[ ]', '[x]')}`,
-    );
-    await expect(uncovered.close()).rejects.toThrow('Impact claim has no check');
+  it('refuses a Checks section under a heading the rulebook does not read, or with no check in it', async () => {
+    for (const description of [
+      `${IMPACT}\n\n### Checks\n\n${ticked(C1)}\n\n${DONE_WHEN}`,
+      `${IMPACT}\n\n## checks\n\n${C1}\n\n${DONE_WHEN}`,
+      `${IMPACT}\n\n## Checks\n\n${DONE_WHEN}`,
+    ]) {
+      const { close, state } = done(description);
+      await expect(close()).rejects.toThrow(GRADER);
+      expect(state.issue.stateId).toBe('s-todo');
+    }
+  });
+
+  it('closes a ticket with no ## Checks through the Done when gate, as before', async () => {
+    const { close } = done(`${IMPACT}\n\n${DONE_WHEN}`);
+    await expect(close()).resolves.toMatchObject({ state: 'Done' });
+    const none = done(IMPACT);
+    await expect(none.close()).rejects.toThrow('the description has no Done when section');
   });
 
   it('on a team not listed, still reads only Done when', async () => {
-    const { close } = done(withChecks(C1.replace('[ ]', '[x]')), ['CUR']);
+    const { close } = done(withChecks(ticked(C1)), ['CUR']);
     await expect(close()).rejects.toThrow('the description has no Done when section');
     const both = done(`${withChecks(C1)}\n\n${DONE_WHEN}`, ['CUR']);
     await expect(both.close()).resolves.toMatchObject({ state: 'Done' });
+  });
+});
+
+describe('a writer never grades a check', () => {
+  const ticked = (line: string) => line.replace('[ ]', '[x]');
+  const BY_HAND = 'checks are ticked by the grader that reads their evidence, not by hand';
+
+  it('refuses a write that ticks a check, by set_state or by a comment patch', async () => {
+    const { strict, state } = setup(withChecks(C1, C2));
+    await expect(
+      strict.setState('ENG-1', [
+        { section: 'Checks', mode: 'replace', body: [ticked(C1), C2].join('\n') },
+      ]),
+    ).rejects.toThrow(`this write ticks C1; ${BY_HAND}`);
+    await expect(
+      strict.comment('ENG-1', {
+        kind: 'evidence',
+        body: 'walked it',
+        patch: [{ section: 'Checks', mode: 'replace', body: [C1, ticked(C2)].join('\n') }],
+      }),
+    ).rejects.toThrow(`this write ticks C2; ${BY_HAND}`);
+    expect(state.issue.description).toBe(withChecks(C1, C2));
+  });
+
+  it('refuses a tick on a check line the rulebook cannot read, which is still a check', async () => {
+    const unreadable = '- [ ] C2 · eyeball it · fine';
+    const { strict } = setup(withChecks(C1, unreadable));
+    await expect(
+      strict.setState('ENG-1', [
+        { section: 'Checks', mode: 'replace', body: [C1, ticked(unreadable)].join('\n') },
+      ]),
+    ).rejects.toThrow(`this write ticks C2; ${BY_HAND}`);
+  });
+
+  it('lands an untick, and keeps a tick the grader wrote on a check the write leaves alone', async () => {
+    const { strict, state, asked } = setup(withChecks(C1.replace('[ ]', '[X]'), C2));
+    await strict.setState('ENG-1', [
+      { section: 'Observed', mode: 'append', body: '2026-11-07 · get_issue · the cap shows' },
+    ]);
+    const C3 = '- [ ] C3 · read healthz https://x.test · 200 <!-- from D3 -->';
+    await strict.setState('ENG-1', [{ section: 'Checks', mode: 'append', body: C3 }]);
+    expect(state.issue.description).toContain(C3);
+    await strict.setState('ENG-1', [
+      { section: 'Checks', mode: 'replace', body: [C1, C2, C3].join('\n') },
+    ]);
+    expect(state.issue.description).toContain(C1);
+    expect(asked).toHaveLength(0);
+  });
+
+  it('refuses a new check that arrives ticked, on an existing ticket or a new one', async () => {
+    const { strict, state } = setup(withChecks(C1));
+    await expect(
+      strict.setState('ENG-1', [{ section: 'Checks', mode: 'append', body: ticked(C2) }]),
+    ).rejects.toThrow(`C2 is new and arrives ticked`);
+    expect(state.issue.description).toBe(withChecks(C1));
+    await expect(
+      setup('').strict.createIssue({
+        team: 'ENG',
+        title: 'The cap is never shown',
+        project_id: 'p-alpha',
+        new_because: 'nothing open covers the cap',
+        distinct_from: [],
+        sections: [
+          { section: 'Impact', mode: 'replace', body: 'a visitor sees the cap' },
+          { section: 'Checks', mode: 'replace', body: ticked(C1) },
+        ],
+      }),
+    ).rejects.toThrow('C1 is new and arrives ticked');
+  });
+
+  it('refuses a reworded check that stays ticked, since the reword voids its grade', async () => {
+    const { strict } = setup(withChecks(ticked(C1)));
+    await expect(
+      strict.setState(
+        'ENG-1',
+        [{ section: 'Checks', mode: 'replace', body: ticked(C1).replace('names', 'shows') }],
+        SIGNED,
+      ),
+    ).rejects.toThrow('C1 is reworded and stays ticked');
+  });
+
+  it('refuses a migration that carries a ticked Done when item into a ticked check', async () => {
+    const before = `${IMPACT}\n\n## Done when\n\n- [x] the reply names the cap · run 1`;
+    const { strict, state, asked } = setup(before);
+    await expect(
+      strict.setState('ENG-1', [
+        { section: 'Checks', mode: 'replace', body: ticked(C1) },
+        { section: 'Done when', mode: 'replace', body: '' },
+      ]),
+    ).rejects.toThrow('C1 is new and arrives ticked');
+    expect(state.issue.description).toBe(before);
+    // Arriving unticked, it moves with no sign-off.
+    await strict.setState('ENG-1', [
+      { section: 'Checks', mode: 'replace', body: C1 },
+      { section: 'Done when', mode: 'replace', body: '' },
+    ]);
+    expect(asked).toHaveLength(0);
+    expect(state.issue.description).toContain(C1);
+  });
+
+  it('on a team not listed, a Checks heading is plain text and the Done when gate is unchanged', async () => {
+    const { strict, state } = setup(`${withChecks(C1)}\n\n## Done when\n\n- [ ] it works`, ['CUR']);
+    await strict.setState('ENG-1', [
+      { section: 'Done when', mode: 'replace', body: '- [x] it works · run 36087655179' },
+    ]);
+    await strict.claim('ENG-1');
+    await expect(strict.setStatus('ENG-1', 'Done')).resolves.toMatchObject({ state: 'Done' });
+    expect(state.issue.stateId).toBe('s-done');
+  });
+});
+
+describe('the Checks section is the span every other section reader sees', () => {
+  // A line that is not a heading for sections.ts (indented, behind an NBSP or a BOM, or inside a code
+  // fence) is not one for ## Checks either, so it cannot stand in for the real section.
+  const DECOYS = [
+    ['a leading NBSP', '\u00a0## Checks'],
+    ['a leading BOM', '\ufeff## Checks'],
+    ['four spaces', '    ## Checks'],
+    ['a code fence', '```\n## Checks'],
+  ] as const;
+  const decoyed = (decoy: string, ...lines: string[]) => {
+    const close = decoy.startsWith('```') ? '\n```' : '';
+    return `${IMPACT}\n\n## Fix\n\nthe fix\n${decoy}\n${lines.join('\n')}${close}\n\n## Checks\n\n${C1}\n${C2}`;
+  };
+
+  it.each(DECOYS)('reads the real ## Checks, not a decoy behind %s in Fix', (_, decoy) => {
+    const description = decoyed(decoy, '- [ ] C9 · walk www/visitor · decoy <!-- from D9 -->');
+    expect(fake.parseChecks(description)?.checks.map((c) => c.id)).toEqual(['C1', 'C2']);
+  });
+
+  it.each(DECOYS)(
+    'asks for sign-off when the real C2 is retired beside a decoy behind %s',
+    async (_, decoy) => {
+      const { strict, asked } = setup(decoyed(decoy, C1, C2));
+      await strict.setState('ENG-1', [{ section: 'Checks', mode: 'replace', body: C1 }], SIGNED);
+      expect(asked[0]?.dropped).toEqual([
+        'C2 · read posthog-flag cap env=production · on (retired)',
+      ]);
+    },
+  );
+
+  it.each(DECOYS)(
+    'refuses a tick on the real checks beside ticked copies behind %s',
+    async (_, decoy) => {
+      const { strict } = setup(decoyed(decoy, C1, C2));
+      await expect(
+        strict.setState('ENG-1', [
+          { section: 'Checks', mode: 'replace', body: [C1.replace('[ ]', '[x]'), C2].join('\n') },
+        ]),
+      ).rejects.toThrow('this write ticks C1');
+    },
+  );
+
+  it('reads a ### line inside ## Checks as part of the section, as Done when does, and every check below it', () => {
+    const description = `${withChecks(C1)}\n\n### more\n\n${C2}`;
+    expect(fake.parseChecks(description)).toMatchObject({
+      checks: [{ id: 'C1' }, { id: 'C2' }],
+      problems: ['not a check line: ### more'],
+    });
+    // Retiring the check below it is a retirement, asked for like any other.
+    expect(droppedChecksById(fake, description, withChecks(C1))).toEqual([
+      'C2 · read posthog-flag cap env=production · on (retired)',
+    ]);
+  });
+
+  it('reads two ## Checks headings as a problem, never as one of them', () => {
+    expect(fake.parseChecks(`${withChecks(C1)}\n\n## Checks\n\n${C2}`)).toEqual({
+      checks: [],
+      problems: ['the description has 2 "Checks" headings; merge them into one'],
+    });
+  });
+
+  it('reads an empty Impact line as no Impact, never the line after it', () => {
+    expect(fake.impactLine('Impact:\n- a visitor sees the cap')).toBeNull();
+    expect(fake.impactLine('Impact:   \nsomething else')).toBeNull();
+    expect(fake.impactLine('Impact: a visitor sees the cap')).toBe('a visitor sees the cap');
   });
 });
 
@@ -720,7 +912,7 @@ function conformance(rulebook: () => ChecksModule) {
 
 describe('the conformance fixtures, read with the fixture rulebook', () => {
   it('has the cases it was generated with', () => {
-    expect(CASES.length).toBeGreaterThanOrEqual(25);
+    expect(CASES.length).toBeGreaterThanOrEqual(46);
   });
   conformance(() => fake);
 });

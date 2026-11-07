@@ -890,6 +890,171 @@
           "sees"
         ]
       }
+    },
+    {
+      "description": "a \"## Checks\" line behind a leading NBSP in another section is not the heading",
+      "ticket": "Impact: a visitor sees the cap\n\n## Fix\n\nthe fix\n ## Checks\n- [ ] C9 · walk www/visitor · decoy <!-- from D9 -->\n\n## Checks\n\n- [ ] C1 · walk alpha/visitor · x <!-- from impact \"a visitor sees the cap\" -->",
+      "parse": {
+        "checks": [
+          {
+            "id": "C1",
+            "ticked": false,
+            "kind": "walk",
+            "target": "alpha/visitor",
+            "claim": "x",
+            "quotes": [
+              "a visitor sees the cap"
+            ]
+          }
+        ],
+        "problems": []
+      },
+      "coverage": {
+        "misquoted": [],
+        "uncovered": []
+      }
+    },
+    {
+      "description": "a \"## Checks\" line behind a leading BOM in another section is not the heading",
+      "ticket": "Impact: a visitor sees the cap\n\n## Fix\n\nthe fix\n﻿## Checks\n- [ ] C9 · walk www/visitor · decoy <!-- from D9 -->\n\n## Checks\n\n- [ ] C1 · walk alpha/visitor · x <!-- from impact \"a visitor sees the cap\" -->",
+      "parse": {
+        "checks": [
+          {
+            "id": "C1",
+            "ticked": false,
+            "kind": "walk",
+            "target": "alpha/visitor",
+            "claim": "x",
+            "quotes": [
+              "a visitor sees the cap"
+            ]
+          }
+        ],
+        "problems": []
+      },
+      "coverage": {
+        "misquoted": [],
+        "uncovered": []
+      }
+    },
+    {
+      "description": "a \"## Checks\" line behind four spaces in another section is not the heading",
+      "ticket": "Impact: a visitor sees the cap\n\n## Fix\n\nthe fix\n    ## Checks\n- [ ] C9 · walk www/visitor · decoy <!-- from D9 -->\n\n## Checks\n\n- [ ] C1 · walk alpha/visitor · x <!-- from impact \"a visitor sees the cap\" -->",
+      "parse": {
+        "checks": [
+          {
+            "id": "C1",
+            "ticked": false,
+            "kind": "walk",
+            "target": "alpha/visitor",
+            "claim": "x",
+            "quotes": [
+              "a visitor sees the cap"
+            ]
+          }
+        ],
+        "problems": []
+      },
+      "coverage": {
+        "misquoted": [],
+        "uncovered": []
+      }
+    },
+    {
+      "description": "a \"## Checks\" line behind a code fence in another section is not the heading",
+      "ticket": "Impact: a visitor sees the cap\n\n## Fix\n\nthe fix\n```\n## Checks\n- [ ] C9 · walk www/visitor · decoy <!-- from D9 -->\n```\n\n## Checks\n\n- [ ] C1 · walk alpha/visitor · x <!-- from impact \"a visitor sees the cap\" -->",
+      "parse": {
+        "checks": [
+          {
+            "id": "C1",
+            "ticked": false,
+            "kind": "walk",
+            "target": "alpha/visitor",
+            "claim": "x",
+            "quotes": [
+              "a visitor sees the cap"
+            ]
+          }
+        ],
+        "problems": []
+      },
+      "coverage": {
+        "misquoted": [],
+        "uncovered": []
+      }
+    },
+    {
+      "description": "a ### line inside ## Checks is part of the section, and the checks below it are read",
+      "ticket": "Impact: a visitor sees the cap\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · walk alpha/visitor · x <!-- from impact \"a visitor sees the cap\" -->\n\n### more\n\n- [ ] C2 · read healthz a · 200 <!-- from D2 -->",
+      "parse": {
+        "checks": [
+          {
+            "id": "C1",
+            "ticked": false,
+            "kind": "walk",
+            "target": "alpha/visitor",
+            "claim": "x",
+            "quotes": [
+              "a visitor sees the cap"
+            ]
+          },
+          {
+            "id": "C2",
+            "ticked": false,
+            "kind": "read",
+            "target": "healthz a",
+            "claim": "200",
+            "quotes": []
+          }
+        ],
+        "problems": [
+          "not a check line: ### more"
+        ]
+      },
+      "coverage": {
+        "misquoted": [],
+        "uncovered": []
+      }
+    },
+    {
+      "description": "two ## Checks headings are a problem, never one of them",
+      "ticket": "Impact: a visitor sees the cap\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · walk alpha/visitor · x <!-- from impact \"a visitor sees the cap\" -->\n\n## Checks\n\n- [ ] C2 · read healthz a · 200 <!-- from D2 -->",
+      "parse": {
+        "checks": [],
+        "problems": [
+          "the description has 2 \"Checks\" headings; merge them into one"
+        ]
+      },
+      "coverage": {
+        "misquoted": [],
+        "uncovered": [
+          "visitor",
+          "sees"
+        ]
+      }
+    },
+    {
+      "description": "an empty Impact line is no Impact, never the line after it",
+      "ticket": "Impact:\n- a visitor sees the reset time\n\n## Checks\n\n- [ ] C1 · walk alpha/visitor · x <!-- from impact \"a visitor sees the cap\" -->",
+      "parse": {
+        "checks": [
+          {
+            "id": "C1",
+            "ticked": false,
+            "kind": "walk",
+            "target": "alpha/visitor",
+            "claim": "x",
+            "quotes": [
+              "a visitor sees the cap"
+            ]
+          }
+        ],
+        "problems": []
+      },
+      "coverage": {
+        "misquoted": [],
+        "uncovered": []
+      }
     }
   ]
 }

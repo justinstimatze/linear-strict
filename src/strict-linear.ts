@@ -90,12 +90,13 @@ import {
 import {
   addedChecksById,
   checksApply,
-  checksDoneProblems,
   type ChecksRules,
   checksWriteProblems,
   droppedChecksById,
   newIds,
   notMigrated,
+  TICKED_BY_GRADER,
+  hasSection,
 } from './checks.js';
 import { type IssueCore, nameOf, personOut, type Viewer } from './issue-core.js';
 import {
@@ -1437,10 +1438,7 @@ export class StrictLinear {
     const before = issue.description ?? '';
     const checks = checksApply(this.checks, issue.team?.key);
     const dropped = checks
-      ? [
-          ...notMigrated(checks, before, next, droppedChecks(before, next)),
-          ...droppedChecksById(checks, before, next),
-        ]
+      ? [...notMigrated(checks, before, next), ...droppedChecksById(checks, before, next)]
       : droppedChecks(before, next);
     if (dropped.length === 0) {
       checkNothingDropped(reason, token);
@@ -1883,13 +1881,19 @@ export class StrictLinear {
     states: string[],
   ): Promise<{ unchecked: string[]; branchUnchecked: boolean }> {
     const doneWhen = readSection(issue.description ?? '', 'Done when');
-    const m = checksApply(this.checks, issue.team?.key);
-    // On a team that uses ## Checks, a ticket with the section is gated on it, and on Done when too
-    // when it has both.
-    const checksOpen = m ? checksDoneProblems(m, issue.description ?? '') : null;
-    if (!doneWhen?.trim() && checksOpen === null) {
+    // On a team that uses ## Checks, a ticket with the section is closed by the project's grader, which
+    // reads each check's evidence and writes Linear itself; no caller of this server closes it.
+    if (
+      checksApply(this.checks, issue.team?.key) &&
+      hasSection(issue.description ?? '', 'Checks')
+    ) {
       throw new Error(
-        `Refusing to move ${issue.identifier} to ${stateName}: the description has no ${m ? 'Done when or Checks' : 'Done when'} section, so nothing says what finished means. Add one with set_state (checklist items that each name the check that proves it), then retry.`,
+        `Refusing to move ${issue.identifier} to ${stateName}: it has a ## Checks section, and the grader closes tickets with Checks once every check has its evidence (a walk's pass, a reader's value, a run or proof). Nothing to do here but the work each check names; ${TICKED_BY_GRADER}.`,
+      );
+    }
+    if (!doneWhen?.trim()) {
+      throw new Error(
+        `Refusing to move ${issue.identifier} to ${stateName}: the description has no Done when section, so nothing says what finished means. Add one with set_state (checklist items that each name the check that proves it), then retry.`,
       );
     }
     const claim = this.claims.get(issue.id, viewer.id);
@@ -1914,11 +1918,6 @@ export class StrictLinear {
     if (uncited.length > 0) {
       throw new Error(
         `Refusing to move ${issue.identifier} to ${stateName}: ${String(uncited.length)} ticked Done when item${uncited.length === 1 ? ' does' : 's do'} not cite what showed ${uncited.length === 1 ? 'it' : 'them'} true:\n${uncited.map(({ item, reason }) => `- [x] ${item} (${reason})`).join('\n')}\n\n${CITING}`,
-      );
-    }
-    if (checksOpen && checksOpen.length > 0) {
-      throw new Error(
-        `Refusing to move ${issue.identifier} to ${stateName}: its ## Checks ${checksOpen.length === 1 ? 'is' : 'are'} not done:\n${checksOpen.map((p) => `- ${p}`).join('\n')}\n\nA check is ticked once its kind's evidence is recorded (a walk's pass, a reader's value, a run or proof). Tick it with set_state (replace the Checks section; a tick is not a reword). A check that no longer applies is retired with set_state and a descope_reason; your user is asked to approve it.`,
       );
     }
     const attachments = await this.soft<AttachmentNode>('attachments', ATTACHMENTS_QUERY, issue.id);

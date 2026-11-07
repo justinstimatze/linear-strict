@@ -15,7 +15,8 @@
  */
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { BOUNDARY, readSection } from './sections.js';
+import { doneWhenDropped } from './done-when.js';
+import { readSection, sectionsNamed } from './sections.js';
 
 export interface Check {
   id: string;
@@ -135,22 +136,25 @@ export function parseChecksRulebook(text: string): ChecksRulebook {
 }
 
 /**
- * The lines under the rulebook's exact heading, up to the next heading or the next generated block
- * (sections.ts BOUNDARY: a tool's `<!-- name:begin -->` or the reconciled marker), where every
- * section ends; null when the heading is absent.
+ * The body lines under the rulebook's exact heading, read through the one section reader every other
+ * section uses (sections.ts sectionsNamed): a heading at column 0 outside a code fence, a span that ends
+ * at the next heading of the same or a higher level or at a generated block. A `###` line inside it is
+ * part of the section, as it is inside Done when, and reads as a line that is not a check. Null when no
+ * heading names the section, or the one that does is not the rulebook's exact line; a string when two
+ * do, since reading either would hide the other.
  */
-function sectionOf(description: string, heading: string): string[] | null {
-  const lines = description.split('\n');
-  const start = lines.findIndex((l) => l.trim() === heading);
-  if (start === -1) return null;
-  const rest = lines.slice(start + 1);
-  const end = rest.findIndex((l) => /^#{1,6}\s/.test(l) || BOUNDARY.test(l));
-  return end === -1 ? rest : rest.slice(0, end);
+function sectionOf(description: string, heading: string): string[] | string | null {
+  const name = heading.replace(/^#{1,6}\s+/, '').trim();
+  const found = sectionsNamed(description, name);
+  if (found.length > 1)
+    return `the description has ${String(found.length)} "${name}" headings; merge them into one`;
+  const [only] = found;
+  return only?.heading.trimEnd() === heading ? only.body : null;
 }
 
-/** The text after `Impact:` on the first line that carries it, or null. */
+/** The text after `Impact:` on the first line that carries it, or null. An empty one is null. */
 function readImpactLine(description: string): string | null {
-  return /(?:^|\n)\W*Impact:\s*(.*)/i.exec(description)?.[1]?.trim() || null;
+  return /(?:^|\n)\W*Impact:[ \t]*(.*)/i.exec(description)?.[1]?.trim() || null;
 }
 
 /** Only an Impact that begins "none" can say the work reached nobody. */
@@ -175,6 +179,7 @@ export function checksInterpreter(rb: ChecksRulebook): ChecksModule {
     parseChecks(description) {
       const lines = sectionOf(asWritten(description), rb.section);
       if (lines === null) return null;
+      if (typeof lines === 'string') return { checks: [], problems: [lines] };
       const checks: Check[] = [];
       const problems: string[] = [];
       for (const raw of lines) {
@@ -341,10 +346,12 @@ export function asWritten(description: string): string {
 const idNumber = (id: string) => Number(id.slice(1));
 
 /** The ## Checks section's lines in the form they were written in, over the span parseChecks reads. */
-const checksLines = (m: ChecksModule, description: string) =>
-  sectionOf(asWritten(description), m.section);
+const checksLines = (m: ChecksModule, description: string) => {
+  const lines = sectionOf(asWritten(description), m.section);
+  return typeof lines === 'string' ? null : lines;
+};
 
-const ID_LINE = /^- \[[ x]\] (C[1-9][0-9]*)\b(.*)$/;
+const ID_LINE = /^- \[([ x])\] (C[1-9][0-9]*)\b(.*)$/;
 
 /** The text after a check's id, without the separator or a trailing provenance comment. */
 function afterId(rest: string): string {
@@ -362,12 +369,16 @@ function afterId(rest: string): string {
  * rewording it needs sign-off and its id is never issued again. `text` is what a grade is made
  * against: kind, target and claim for a parsed check, the line after its id for one that isn't.
  */
-function checksById(m: ChecksModule, description: string): Map<string, { text: string }> {
-  const byId = new Map<string, { text: string }>();
-  for (const c of m.parseChecks(description)?.checks ?? []) byId.set(c.id, { text: graded(c) });
+function checksById(
+  m: ChecksModule,
+  description: string,
+): Map<string, { text: string; ticked: boolean }> {
+  const byId = new Map<string, { text: string; ticked: boolean }>();
+  for (const c of m.parseChecks(description)?.checks ?? [])
+    byId.set(c.id, { text: graded(c), ticked: c.ticked });
   for (const raw of checksLines(m, description) ?? []) {
-    const [, id, rest = ''] = ID_LINE.exec(raw.trim()) ?? [];
-    if (id && !byId.has(id)) byId.set(id, { text: afterId(rest) });
+    const [, box, id, rest = ''] = ID_LINE.exec(raw.trim()) ?? [];
+    if (id && !byId.has(id)) byId.set(id, { text: afterId(rest), ticked: box === 'x' });
   }
   return byId;
 }
@@ -379,7 +390,7 @@ export function newIds(m: ChecksModule, before: string, after: string): string[]
 }
 
 /** Whether the description has the section under any heading level or case; two of them count. */
-const hasSection = (description: string, name: 'Checks' | 'Done when') => {
+export const hasSection = (description: string, name: 'Checks' | 'Done when') => {
   try {
     return readSection(description, name) !== null;
   } catch {
@@ -406,22 +417,6 @@ function contentProblems(m: ChecksModule, description: string): string[] {
     problems.push(
       `Impact claim has no check: no check quotes ${uncovered.map((w) => `"${w}"`).join(', ')}. Cite the clause with <!-- from impact "…" --> on the check that proves it, add a check, or narrow the Impact.`,
     );
-  return problems;
-}
-
-/**
- * Why the Done gate refuses a ticket's ## Checks, or null when it has none. Every check must read under
- * the rulebook, the Impact must be covered, and every check must be ticked. A check carries no citation
- * on its line, since anything added after its claim is a reword: its evidence is its kind's record
- * (a walk's grade, a reader's value, a run's result), which the project's grader reads.
- */
-export function checksDoneProblems(m: ChecksModule, description: string): string[] | null {
-  const parsed = m.parseChecks(description);
-  if (parsed === null && !hasSection(description, 'Checks')) return null;
-  const problems = contentProblems(m, description);
-  if (parsed?.checks.length === 0) problems.push('Checks: the section lists no check');
-  for (const c of parsed?.checks ?? [])
-    if (!c.ticked) problems.push(`${c.id} is not ticked: ${c.line}`);
   return problems;
 }
 
@@ -452,6 +447,7 @@ export function checksWriteProblems(
     sectionText(before) === sectionText(after) && m.impactLine(before) === m.impactLine(after);
   const known = new Set(untouched ? contentProblems(m, before) : []);
   const problems = contentProblems(m, after).filter((p) => !known.has(p));
+  problems.push(...tickProblems(m, before, after));
   const used = new Set([before, ...earlier].flatMap((text) => [...checksById(m, text).keys()]));
   const highest = Math.max(0, ...[...used].map(idNumber));
   for (const id of newIds(m, before, after)) {
@@ -465,6 +461,33 @@ export function checksWriteProblems(
       );
   }
   return problems;
+}
+
+export const TICKED_BY_GRADER =
+  'checks are ticked by the grader that reads their evidence, not by hand';
+
+/**
+ * Ticks this write puts on a check. Only the project's grader ticks a check, and it writes Linear
+ * itself, never through this server: so a check this write ticks, a new check that arrives ticked and a
+ * reworded check that stays ticked are all refused. Unticking, and keeping a tick on an unchanged
+ * check, are not.
+ */
+function tickProblems(m: ChecksModule, before: string, after: string): string[] {
+  const had = checksById(m, before);
+  return [...checksById(m, after)].flatMap(([id, { text, ticked }]) => {
+    if (!ticked) return [];
+    const prev = had.get(id);
+    if (!prev)
+      return [
+        `Checks: ${id} is new and arrives ticked; a new check arrives unticked, since ${TICKED_BY_GRADER}`,
+      ];
+    if (!prev.ticked) return [`Checks: this write ticks ${id}; ${TICKED_BY_GRADER}`];
+    if (prev.text !== text)
+      return [
+        `Checks: ${id} is reworded and stays ticked; a reword voids its grade, so it arrives unticked, since ${TICKED_BY_GRADER}`,
+      ];
+    return [];
+  });
 }
 
 /** A check's graded text: its kind, target and claim. The box and the provenance comment are not. */
@@ -500,44 +523,37 @@ const sameText = (a: string, b: string) =>
  * about how it is proved, so the kind and target are the migrating agent's choice, and the kind picks
  * the grader: a run, read, fault, telemetry or monitor check is closed by the grader's own proof. Only
  * the check an unmigrated item would have had passes through: a fresh walker on either host, as a
- * visitor. Any other kind or profile is a choice a person approves. The whole exemption is this
- * function; returning false sends every migrated item to sign-off.
+ * visitor, still to be graded. Any other kind or profile is a choice a person approves. The whole
+ * exemption is this function; returning false sends every migrated item to sign-off.
  */
-function migrationExempt(item: string, check: Check, wasTicked: boolean): boolean {
-  return (
-    sameText(check.claim, item) &&
-    (wasTicked || !check.ticked) &&
-    check.kind === 'walk' &&
-    check.target.endsWith('/visitor')
-  );
+function migrationExempt(check: Check): boolean {
+  return !check.ticked && check.kind === 'walk' && check.target.endsWith('/visitor');
 }
 
 /**
- * Of the Done when items a write drops, the ones it did not carry into ## Checks. Only a migration
- * moves items: a write that removes Done when and adds ## Checks in the same step. An item moved when
- * its text, its citation aside, is the whole claim of exactly one check this write adds, and that
- * check passes migrationExempt. Every other dropped item, and every item in any other write, still
- * needs sign-off.
+ * The Done when items a write drops (done-when.ts droppedChecks, in the same form) that it did not carry
+ * into ## Checks. Only a migration moves items: a write that removes Done when and adds ## Checks in the
+ * same step. An item moved when its text, its citation aside, is the whole claim of exactly one check
+ * this write adds, and that check passes migrationExempt. A ticked item moves the same way and arrives
+ * unticked: its tick was the old gate's, and a check is graded afresh. Every other dropped item, and
+ * every item in any other write, still needs sign-off.
  */
-export function notMigrated(
-  m: ChecksModule,
-  before: string,
-  after: string,
-  dropped: string[],
-): string[] {
+export function notMigrated(m: ChecksModule, before: string, after: string): string[] {
+  const dropped = doneWhenDropped(before, after);
+  const shown = dropped.map((d) => d.shown);
   const migration =
     hasSection(before, 'Done when') &&
     !hasSection(after, 'Done when') &&
     !hasSection(before, 'Checks') &&
     m.parseChecks(after) !== null;
-  if (!migration) return dropped;
+  if (!migration) return shown;
   // The ticket had no ## Checks before this write, so every check is one this write adds.
   const added = m.parseChecks(after)?.checks ?? [];
-  return dropped.filter((item) => {
-    const wasTicked = item.endsWith(' (already ticked)');
-    const text = item.replace(/ \(already ticked\)$/, '');
-    const matches = added.filter((c) => sameText(c.claim, text));
-    const [only] = matches;
-    return !(matches.length === 1 && only && migrationExempt(text, only, wasTicked));
-  });
+  return dropped
+    .filter(({ item }) => {
+      const matches = added.filter((c) => sameText(c.claim, item));
+      const [only] = matches;
+      return !(matches.length === 1 && only && migrationExempt(only));
+    })
+    .map((d) => d.shown);
 }

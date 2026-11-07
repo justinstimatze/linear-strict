@@ -131,27 +131,55 @@ function canonicalName(name: string, checks: boolean): SectionName | null {
   return sectionOrder(checks).find((section) => section.toLowerCase() === wanted) ?? null;
 }
 
-function findSection(lines: string[], name: SectionName): SectionSpan | null {
+/**
+ * Every span headed `name`, at any level and in any case. A heading is a line at column 0 that reads
+ * `#{1,6} text`, outside a code fence; a span ends at the next heading of the same or a higher level,
+ * or at a generated block. This is the one definition of a section: every reader, the ## Checks
+ * interpreter included, takes its span from here, so a line is a heading for one if and only if it is
+ * one for all.
+ */
+function sectionSpans(lines: string[], name: string): SectionSpan[] {
   const headings = scanHeadings(lines);
-  const matches = headings.filter((heading) => heading.name.toLowerCase() === name.toLowerCase());
+  return headings
+    .filter((heading) => heading.name.toLowerCase() === name.toLowerCase())
+    .map((heading) => {
+      let end = lines.length;
+      const next = headings.find((h) => h.line > heading.line && h.level <= heading.level);
+      if (next) end = next.line;
+      const generated = lines.findIndex(
+        (line, i) => i > heading.line && i < end && BOUNDARY.test(line),
+      );
+      if (generated !== -1) end = generated;
+      return { headingLine: heading.line, level: heading.level, start: heading.line + 1, end };
+    });
+}
+
+function findSection(lines: string[], name: SectionName): SectionSpan | null {
+  const matches = sectionSpans(lines, name);
   if (matches.length > 1) {
     throw new Error(
       `The description has ${matches.length} "${name}" headings (lines ${matches
-        .map((m) => m.line + 1)
+        .map((m) => m.headingLine + 1)
         .join(', ')}). Merge them by hand before patching; picking one would hide the other.`,
     );
   }
-  const heading = matches[0];
-  if (!heading) return null;
+  return matches[0] ?? null;
+}
 
-  let end = lines.length;
-  const next = headings.find((h) => h.line > heading.line && h.level <= heading.level);
-  if (next) end = next.line;
-  const generated = lines.findIndex(
-    (line, i) => i > heading.line && i < end && BOUNDARY.test(line),
-  );
-  if (generated !== -1) end = generated;
-  return { headingLine: heading.line, level: heading.level, start: heading.line + 1, end };
+/**
+ * Each section headed `name`, as its heading line and its body lines untrimmed, read by the same rules
+ * as readSection. More than one means the description has two such headings, which no reader may
+ * resolve by picking one.
+ */
+export function sectionsNamed(
+  description: string,
+  name: string,
+): { heading: string; body: string[] }[] {
+  const lines = splitLines(description);
+  return sectionSpans(lines, name).map((span) => ({
+    heading: lines[span.headingLine] ?? '',
+    body: lines.slice(span.start, span.end),
+  }));
 }
 
 function isBlank(line: string | undefined): boolean {
