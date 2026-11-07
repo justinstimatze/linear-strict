@@ -14,6 +14,7 @@
  */
 import { type Gql, paginate } from './graphql.js';
 import { PAGE_INFO } from './queries.js';
+import { type ApiUsage, logUsage } from './usage-log.js';
 
 export const OVERLAP_MODEL = 'claude-sonnet-5-5';
 /** At most this many tickets a model names are put to the filer. */
@@ -91,10 +92,12 @@ export function overlapReader(options: {
     const body = (await response.json()) as {
       content?: { type: string; text?: string }[];
       stop_reason?: string;
+      usage?: ApiUsage;
       error?: { message?: string };
     };
     if (!response.ok)
       throw new Error(`${String(response.status)} ${body.error?.message ?? response.statusText}`);
+    logUsage('overlap', model, body.usage);
     if (body.stop_reason === 'max_tokens') throw new Error('the reply ran past its length limit');
     const text = body.content?.find((block) => block.type === 'text')?.text ?? '';
     const parsed = JSON.parse(text || '{}') as { overlaps?: unknown };
