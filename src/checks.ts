@@ -145,7 +145,17 @@ function checksLines(description: string): string[] | null {
   return end === -1 ? rest : rest.slice(0, end);
 }
 
-const ID_LINE = /^- \[[ x]\] (C[1-9][0-9]*)\b\s*(?:·\s*)?(.*)$/;
+const ID_LINE = /^- \[[ x]\] (C[1-9][0-9]*)\b(.*)$/;
+
+/** The text after a check's id, without the separator or a trailing provenance comment. */
+function afterId(rest: string): string {
+  let text = rest.trimStart();
+  if (text.startsWith('·')) text = text.slice(1).trimStart();
+  text = text.trimEnd();
+  const open = text.lastIndexOf('<!--');
+  if (open !== -1 && text.endsWith('-->')) text = text.slice(0, open).trimEnd();
+  return text;
+}
 
 /**
  * Every check a description holds, by id: the ones the module reads, and the lines it can't read
@@ -158,7 +168,7 @@ function checksById(m: ChecksModule, description: string): Map<string, { text: s
   for (const c of m.parseChecks(description)?.checks ?? []) byId.set(c.id, { text: graded(c) });
   for (const raw of checksLines(description) ?? []) {
     const [, id, rest = ''] = ID_LINE.exec(raw.trim()) ?? [];
-    if (id && !byId.has(id)) byId.set(id, { text: rest.replace(/\s*<!--.*-->\s*$/, '') });
+    if (id && !byId.has(id)) byId.set(id, { text: afterId(rest) });
   }
   return byId;
 }
