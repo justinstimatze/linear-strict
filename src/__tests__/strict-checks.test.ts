@@ -771,6 +771,8 @@ describe('an Impact that says none', () => {
     expect(uncovered('none yet, no fix shipped')).toEqual([]);
     expect(uncovered('none for visitors: but staff see the cap')).toEqual(['staff']);
     expect(uncovered('none: but staff see the cap')).toEqual(['staff']);
+    expect(uncovered('**none**')).toEqual([]);
+    expect(uncovered('none:')).toEqual([]);
   });
 
   it('reads "none of …" and a word that only starts with none as a claim like any other', () => {
@@ -778,6 +780,7 @@ describe('an Impact that says none', () => {
       uncovered('none of the forty thousand visitors can lose their chat history any more'),
     ).toEqual(['none', 'forty', 'thousand', 'visitors', 'lose', 'chat', 'history']);
     expect(uncovered('None Of the visitors can sign in')).toEqual(['none', 'visitors', 'sign']);
+    expect(uncovered('none\tof the visitors can sign in')).toEqual(['none', 'visitors', 'sign']);
     expect(uncovered('nonetheless visitors see the cap')).toEqual(['nonetheless', 'visitors']);
   });
 });

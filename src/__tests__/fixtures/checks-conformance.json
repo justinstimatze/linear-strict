@@ -742,6 +742,30 @@
       }
     },
     {
+      "description": "bare \"none:\" with a claim after the colon: the tail is a claim, unquoted",
+      "ticket": "Impact: none: a grader reads ids\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · read healthz a · 200 <!-- from D1 -->",
+      "parse": {
+        "checks": [
+          {
+            "id": "C1",
+            "ticked": false,
+            "kind": "read",
+            "target": "healthz a",
+            "claim": "200",
+            "quotes": []
+          }
+        ],
+        "problems": []
+      },
+      "coverage": {
+        "misquoted": [],
+        "uncovered": [
+          "grader",
+          "reads"
+        ]
+      }
+    },
+    {
       "description": "\"none.\" claims nothing",
       "ticket": "Impact: none.\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · read healthz a · 200 <!-- from D1 -->",
       "parse": {
@@ -813,6 +837,31 @@
     {
       "description": "\"None Of …\" in any case is a claim like any other",
       "ticket": "Impact: None Of the visitors can sign in\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · read healthz a · 200 <!-- from D1 -->",
+      "parse": {
+        "checks": [
+          {
+            "id": "C1",
+            "ticked": false,
+            "kind": "read",
+            "target": "healthz a",
+            "claim": "200",
+            "quotes": []
+          }
+        ],
+        "problems": []
+      },
+      "coverage": {
+        "misquoted": [],
+        "uncovered": [
+          "none",
+          "visitors",
+          "sign"
+        ]
+      }
+    },
+    {
+      "description": "\"none\" then a tab then \"of\" is a claim like any other",
+      "ticket": "Impact: none\tof the visitors can sign in\n\n## Observed\n\n- 2026-11-01 · a · b\n\n## Checks\n\n- [ ] C1 · read healthz a · 200 <!-- from D1 -->",
       "parse": {
         "checks": [
           {
