@@ -1,4 +1,5 @@
 import type { SignOffAnswer, SignOffRequest } from './strict-linear.js';
+import { type ApiUsage, logUsage } from './usage-log.js';
 
 export const DEFAULT_JUDGE_MODEL = 'claude-opus-5-5';
 
@@ -98,10 +99,12 @@ export function judgeSignOff(options: JudgeOptions) {
       const body = (await response.json()) as {
         content?: { type: string; text?: string }[];
         stop_reason?: string;
+        usage?: ApiUsage;
         error?: { message?: string };
       };
       if (!response.ok)
         throw new Error(`${String(response.status)} ${body.error?.message ?? response.statusText}`);
+      logUsage('judge', model, body.usage);
       if (body.stop_reason === 'refusal')
         throw new Error('the model declined to judge this request');
       const text = body.content?.find((block) => block.type === 'text')?.text ?? '';
