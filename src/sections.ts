@@ -73,7 +73,7 @@ export interface SectionPatch {
 const HEADING = /^(#{1,6})\s+(.+?)\s*#*\s*$/;
 const FENCE = /^\s*(```|~~~)/;
 /** Tool-written lines that end the section above them: a generated block, or the reconciled marker. */
-export const BOUNDARY = /<!--\s*(?:[\w.-]+:begin|strict:reconciled\b[^>]*)\s*-->/;
+export const BOUNDARY = /<!--\s*(?:[\w.-]+:begin\s*|strict:reconciled\b[^>]*)-->/;
 const GENERATED_ANY = /<!--\s*[\w.-]+:(begin|end)\s*-->/;
 /**
  * The description with every generated block removed, begin and end markers included. A tool
