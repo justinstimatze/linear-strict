@@ -78,7 +78,7 @@ const CONTINUED = '↳';
  * wants it and what approving gives up, then room for the person to answer.
  */
 export function signOffRows(
-  request: Pick<SignOffRequest, 'title' | 'dropped' | 'added' | 'reason' | 'risk'>,
+  request: Pick<SignOffRequest, 'title' | 'dropped' | 'added' | 'impact' | 'reason' | 'risk'>,
 ): Row[] {
   const rows: Row[] = [];
   const push = (title: string, text: string) => {
@@ -103,6 +103,10 @@ export function signOffRows(
       push(numbered('New check', index), added);
     }
   }
+  if (request.impact) {
+    push('Impact today', request.impact.before);
+    push('Impact becomes', request.impact.after);
+  }
   push('Why the agent wants it', request.reason);
   push('If you accept', request.risk);
   push(
@@ -117,7 +121,7 @@ const PREVIEW_WIDTH = 60;
 
 /** The change as one block of labelled, wrapped text, for AskUserQuestion's preview box. */
 export function previewText(
-  request: Pick<SignOffRequest, 'title' | 'dropped' | 'added' | 'reason' | 'risk'>,
+  request: Pick<SignOffRequest, 'title' | 'dropped' | 'added' | 'impact' | 'reason' | 'risk'>,
 ): string {
   const blocks: string[] = [];
   const block = (label: string, text: string) =>
@@ -133,6 +137,10 @@ export function previewText(
     if (dropped !== undefined) block('Becomes', added ?? 'nothing: this check is removed');
     else if (added !== undefined) block(numbered('New check', index), added);
   }
+  if (request.impact) {
+    block('Impact today', request.impact.before);
+    block('Impact becomes', request.impact.after);
+  }
   block('Why the agent wants it', request.reason);
   block('If you accept', request.risk);
   return blocks.join('\n\n');
@@ -143,15 +151,27 @@ export const DECLINE = 'Decline';
 
 /** The question a sign-off asks, with its token at the end so the hooks can find it. */
 export function signOffQuestion(request: SignOffRequest, token: string): AskQuestion {
-  const kept = request.dropped
-    .map((item) =>
-      wrap(item, PREVIEW_WIDTH)
-        .map((line) => `  ${line}`)
-        .join('\n'),
-    )
-    .join('\n\n');
+  const indented = (text: string) =>
+    wrap(text, PREVIEW_WIDTH)
+      .map((line) => `  ${line}`)
+      .join('\n');
+  const checks = request.dropped.length > 0;
+  const { impact } = request;
+  const stays = [
+    ...(checks
+      ? [`Nothing is written. The check stays:\n\n${request.dropped.map(indented).join('\n\n')}`]
+      : []),
+    ...(impact
+      ? [
+          `${checks ? 'The Impact line stays' : 'Nothing is written. The Impact line stays'}:\n\n${indented(impact.before)}`,
+        ]
+      : []),
+  ].join('\n\n');
+  const subject = [checks ? 'Done when' : null, impact ? 'Impact' : null]
+    .filter(Boolean)
+    .join(' and ');
   return {
-    question: `${request.identifier}: approve this Done when change? (sign-off ${token})`,
+    question: `${request.identifier}: approve this ${subject} change? (sign-off ${token})`,
     header: 'Sign-off',
     multiSelect: false,
     options: [
@@ -162,8 +182,8 @@ export function signOffQuestion(request: SignOffRequest, token: string): AskQues
       },
       {
         label: DECLINE,
-        description: 'Keep the check. Or choose Other and say what should change instead.',
-        preview: `Nothing is written. The check stays:\n\n${kept}`,
+        description: `Keep ${checks ? 'the check' : 'the Impact line'}. Or choose Other and say what should change instead.`,
+        preview: stays,
       },
     ],
   };
@@ -171,9 +191,9 @@ export function signOffQuestion(request: SignOffRequest, token: string): AskQues
 
 /** A hash of what is being approved, so an answer can't be carried over to a different change. */
 function bindingOf(request: SignOffRequest) {
-  const { identifier, dropped, added, reason, risk } = request;
+  const { identifier, dropped, added, impact, reason, risk } = request;
   return createHash('sha256')
-    .update(JSON.stringify({ identifier, dropped, added, reason, risk }))
+    .update(JSON.stringify({ identifier, dropped, added, impact, reason, risk }))
     .digest('hex');
 }
 
@@ -270,7 +290,13 @@ export function elicitSignOff(getServer: () => Elicitor | undefined) {
     // terminal's width, so it says what is being asked and how to read it;
     // the substance is in the rows.
     const count = request.dropped.length;
-    const message = `${request.identifier}: the agent wants to change ${count === 1 ? 'a Done when check' : `${String(count)} Done when checks`}. Read each row (↓), then Accept or Decline.`;
+    const what = [
+      count === 0 ? null : count === 1 ? 'a Done when check' : `${String(count)} Done when checks`,
+      request.impact ? 'the Impact line' : null,
+    ]
+      .filter(Boolean)
+      .join(' and ');
+    const message = `${request.identifier}: the agent wants to change ${what}. Read each row (↓), then Accept or Decline.`;
     const fields = signOffRows(request).map(
       (row, index) => [`row_${String(index + 1)}`, row] as const,
     );

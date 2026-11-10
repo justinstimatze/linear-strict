@@ -52,6 +52,56 @@ describe('the sign-off preview', () => {
   });
 });
 
+describe('the sign-off question for an Impact change', () => {
+  const IMPACT_REQUEST: SignOffRequest = {
+    identifier: 'ENG-2',
+    title: 'Show the message cap',
+    dropped: [],
+    added: [],
+    impact: {
+      before: 'Visitors see their daily message cap before they hit it.',
+      after: 'Signed-in visitors see a cap.',
+    },
+    reason: 'the cap ships for signed-in visitors only',
+    risk: 'release notes stop promising the cap to anonymous visitors',
+    description: 'Impact: Visitors see their daily message cap before they hit it.',
+  };
+
+  it('names the Impact change and shows the old and new line in both previews', async () => {
+    const signOff = previewSignOff(memorySignOffStore(), () => new Date('2026-09-26T00:00:00Z'));
+    const first = await signOff(IMPACT_REQUEST);
+    const json = /\{"questions":.*\}/.exec(first.instructions ?? '')?.[0] ?? '';
+    const ask = (JSON.parse(json) as { questions: AskQuestion[] }).questions[0];
+    expect(ask?.question).toMatch(
+      /^ENG-2: approve this Impact change\? \(sign-off [0-9a-f]{12}\)$/,
+    );
+    const accept = ask?.options.find((option) => option.label === ACCEPT)?.preview ?? '';
+    expect(accept).toContain(
+      'Impact today\n  Visitors see their daily message cap before they hit it.\n\nImpact becomes\n  Signed-in visitors see a cap.',
+    );
+    expect(accept).not.toMatch(/Check today/);
+    const decline = ask?.options.find((option) => option.label === DECLINE)?.preview ?? '';
+    expect(decline).toMatch(/Impact line stays[\s\S]*Visitors see their daily message cap/);
+  });
+
+  it('does not let an answer approve a different Impact', async () => {
+    const store = memorySignOffStore();
+    const signOff = previewSignOff(store);
+    const first = await signOff(IMPACT_REQUEST);
+    const json = /\{"questions":.*\}/.exec(first.instructions ?? '')?.[0] ?? '';
+    const ask = (JSON.parse(json) as { questions: AskQuestion[] }).questions[0];
+    if (!ask) throw new Error('no question issued');
+    const token = tokenIn(ask.question) ?? '';
+    askPost(answered(ask, ACCEPT), store);
+    const swapped = await signOff({
+      ...IMPACT_REQUEST,
+      impact: { before: IMPACT_REQUEST.impact?.before ?? '', after: 'Nobody sees a cap.' },
+      token,
+    });
+    expect(swapped).toMatchObject({ outcome: 'pending' });
+  });
+});
+
 describe('sign-off through AskUserQuestion and its hooks', () => {
   it('approves on Accept once the hook has recorded it, and only once', async () => {
     const { store, signOff, ask, token } = await issue();

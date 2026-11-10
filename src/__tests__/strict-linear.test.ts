@@ -751,6 +751,124 @@ describe('dropping an unticked Done when item', () => {
   });
 });
 
+describe('changing the Impact line', () => {
+  const BODY =
+    '## Observed\n\n- 2026-09-01 · `curl /health` · 200\n\n## Done when\n\n- [ ] the cap shows';
+  const OLD = 'Visitors see their daily message cap before they hit it.';
+  const NEW = 'Signed-in visitors see a cap.';
+
+  function withImpact(impact: string | null, signOff?: StrictLinearOptions['signOff']) {
+    const env = setup({}, signOff);
+    env.state.issue.description = impact === null ? BODY : `Impact: ${impact}\n\n${BODY}`;
+    return env;
+  }
+  const impactPatch = (body: string) => [{ section: 'Impact', mode: 'replace' as const, body }];
+
+  it('refuses a reworded Impact without a reason, showing the old and new line, and writes nothing', async () => {
+    const { state, strict } = withImpact(OLD, () => Promise.resolve('approved'));
+    const before = state.issue.description;
+    await expect(strict.setState('ENG-1', impactPatch(NEW))).rejects.toThrow(
+      /changes the Impact line:\n {2}Impact today: Visitors see their daily message cap before they hit it\.\n {2}Becomes: Signed-in visitors see a cap\.[\s\S]*descope_reason/,
+    );
+    expect(state.issue.description).toBe(before);
+  });
+
+  it('asks for sign-off with the old and new Impact, then records a comment naming the change and who approved it', async () => {
+    const asked: SignOffRequest[] = [];
+    const { state, strict } = withImpact(OLD, (request) => {
+      asked.push(request);
+      return Promise.resolve(
+        request.token
+          ? { outcome: 'approved', signer: 'person' }
+          : { outcome: 'pending', instructions: 'Ask with AskUserQuestion.' },
+      );
+    });
+    const call = (token?: string) =>
+      strict.setState('ENG-1', impactPatch(NEW), {
+        descope_reason: 'the cap ships for signed-in visitors only',
+        descope_risk: 'release notes stop promising the cap to anonymous visitors',
+        sign_off: token,
+      });
+    const before = state.issue.description;
+    await expect(call()).rejects.toThrow(
+      /Nothing was written\. Changing the Impact line needs sign-off[\s\S]*Ask with AskUserQuestion\./,
+    );
+    expect(state.issue.description).toBe(before);
+    expect(asked[0]).toMatchObject({ dropped: [], added: [], impact: { before: OLD, after: NEW } });
+
+    const result = await call('0123456789ab');
+    expect(result.descope).toMatchObject({
+      signed_off: true,
+      signed_off_by: 'person',
+      impact: { before: OLD, after: NEW },
+    });
+    expect(state.issue.description).toMatch(/^Impact: Signed-in visitors see a cap\.\n/);
+    expect(state.comments.at(-1)?.body).toMatch(
+      /· descope\n\nImpact line changed, with sign-off from the person at the client:\n- Was: Visitors see their daily message cap before they hit it\.\n- Now: Signed-in visitors see a cap\.[\s\S]*Reason: the cap ships for signed-in visitors only/,
+    );
+    const read = await strict.getIssue('ENG-1');
+    expect(read.drift.unreconciled_comments).toEqual([]);
+  });
+
+  it('needs no sign-off to set an Impact line where none was', async () => {
+    const asked: SignOffRequest[] = [];
+    const { state, strict } = withImpact(null, (request) => {
+      asked.push(request);
+      return Promise.resolve('approved');
+    });
+    const result = await strict.setState('ENG-1', impactPatch(NEW));
+    expect(result).not.toHaveProperty('descope');
+    expect(asked).toEqual([]);
+    expect(state.issue.description).toMatch(/^Impact: Signed-in visitors see a cap\./);
+  });
+
+  it('needs no sign-off when the Impact differs only in whitespace or a robot prefix', async () => {
+    const asked: SignOffRequest[] = [];
+    const { state, strict } = withImpact(OLD, (request) => {
+      asked.push(request);
+      return Promise.resolve('approved');
+    });
+    state.issue.description = `🤖 Impact: ${OLD}\n\n${BODY}`;
+    await expect(
+      strict.setState('ENG-1', impactPatch(`  ${OLD.replace(/ /g, '   ')}  `)),
+    ).resolves.toMatchObject({ identifier: 'ENG-1' });
+    expect(asked).toEqual([]);
+  });
+
+  it('refuses a stray descope_reason on an identical Impact, and an Impact change through a comment patch', async () => {
+    const { strict } = withImpact(OLD, () => Promise.resolve('approved'));
+    await expect(
+      strict.setState('ENG-1', impactPatch(OLD), { descope_reason: 'why not' }),
+    ).rejects.toThrow(/drops or rewords no Done when item and changes no Impact line/);
+    await expect(
+      strict.comment('ENG-1', { kind: 'correction', body: 'narrower', patch: impactPatch(NEW) }),
+    ).rejects.toThrow(/changes the Impact line[\s\S]*with set_state and a descope_reason/);
+  });
+
+  it('asks once for a write that rewords both a Done when item and the Impact', async () => {
+    const asked: SignOffRequest[] = [];
+    const { state, strict } = withImpact(OLD, (request) => {
+      asked.push(request);
+      return Promise.resolve('approved');
+    });
+    const result = await strict.setState(
+      'ENG-1',
+      [...impactPatch(NEW), { section: 'Done when', mode: 'replace', body: '- [ ] a cap shows' }],
+      { descope_reason: 'narrowed to signed-in', descope_risk: 'anonymous cap goes unchecked' },
+    );
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toMatchObject({
+      dropped: ['the cap shows'],
+      added: ['a cap shows'],
+      impact: { before: OLD, after: NEW },
+    });
+    expect(result.descope).toMatchObject({ dropped: ['the cap shows'] });
+    expect(state.comments.at(-1)?.body).toMatch(
+      /Dropped from Done when[\s\S]*- the cap shows[\s\S]*Impact line changed[\s\S]*- Now: Signed-in/,
+    );
+  });
+});
+
 describe('claim and the Done gate', () => {
   it('refuses a patch when the description changed between reading and writing it', async () => {
     const { state } = setup();

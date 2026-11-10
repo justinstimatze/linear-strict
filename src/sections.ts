@@ -51,6 +51,16 @@ export function setImpactLine(description: string, body: string): string {
   return [`Impact: ${text}`, ...(kept.length > 0 ? ['', ...kept] : [])].join('\n');
 }
 
+/**
+ * The text of the description's Impact line, without its "Impact:" label or robot prefix, with each
+ * run of whitespace read as one space; null when there is none or it is empty.
+ */
+export function impactText(description: string): string | null {
+  const line = splitLines(description).find((l) => IMPACT_LINE.test(l));
+  const text = line?.replace(IMPACT_LINE, '').replace(/\s+/g, ' ').trim();
+  return text || null;
+}
+
 function validateImpact(patch: SectionPatch): string[] {
   const errors: string[] = [];
   const lines = splitLines(patch.body).filter((line) => line.trim() !== '');
