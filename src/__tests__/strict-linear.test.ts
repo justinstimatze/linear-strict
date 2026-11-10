@@ -835,6 +835,33 @@ describe('changing the Impact line', () => {
     expect(asked).toEqual([]);
   });
 
+  it.each([
+    ['bold', `**Impact:** ${OLD}`],
+    ['a list item', `- Impact: ${OLD}`],
+    ['a quote', `> Impact: ${OLD}`],
+  ])(
+    'refuses a reworded Impact written as %s by another client, and writes nothing',
+    async (_, line) => {
+      const { state, strict } = withImpact(OLD, () => Promise.resolve('approved'));
+      state.issue.description = `${line}\n\n${BODY}`;
+      const before = state.issue.description;
+      await expect(strict.setState('ENG-1', impactPatch(NEW))).rejects.toThrow(
+        /changes the Impact line:\n {2}Impact today: Visitors see their daily message cap/,
+      );
+      expect(state.issue.description).toBe(before);
+    },
+  );
+
+  it('asks before folding two Impact lines into one, even when the first is unchanged', async () => {
+    const { state, strict } = withImpact(OLD, () => Promise.resolve('approved'));
+    state.issue.description = `Impact: ${OLD}\n\n${BODY}\n\nImpact: also anonymous visitors`;
+    const before = state.issue.description;
+    await expect(strict.setState('ENG-1', impactPatch(OLD))).rejects.toThrow(
+      /changes the Impact line:[\s\S]*also anonymous visitors/,
+    );
+    expect(state.issue.description).toBe(before);
+  });
+
   it('refuses a stray descope_reason on an identical Impact, and an Impact change through a comment patch', async () => {
     const { strict } = withImpact(OLD, () => Promise.resolve('approved'));
     await expect(

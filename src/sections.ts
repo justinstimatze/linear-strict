@@ -42,7 +42,11 @@ export const CHECKS_PATCHABLE_SECTIONS: readonly SectionName[] = [
  * language who notices this work. It is a field a patch can set, alongside the sections.
  */
 export const IMPACT = 'Impact';
-const IMPACT_LINE = /^[ \t]*(?:\u{1F916}[ \t]*)*impact[ \t]*:/iu;
+/**
+ * A line carrying the Impact label, with whatever markup another client put around it: a robot
+ * prefix, `**Impact:**`, `- Impact:`, `> Impact:`. The match takes the label and the markup after it.
+ */
+const IMPACT_LINE = /^\W*impact[ \t]*:[*_ \t]*/iu;
 
 /** Sets or replaces the description's Impact line, keeping it first. */
 export function setImpactLine(description: string, body: string): string {
@@ -56,9 +60,23 @@ export function setImpactLine(description: string, body: string): string {
  * run of whitespace read as one space; null when there is none or it is empty.
  */
 export function impactText(description: string): string | null {
-  const line = splitLines(description).find((l) => IMPACT_LINE.test(l));
-  const text = line?.replace(IMPACT_LINE, '').replace(/\s+/g, ' ').trim();
-  return text || null;
+  return impactTexts(description)[0] ?? null;
+}
+
+/**
+ * The text of every Impact line in the description, in order, read as impactText reads one. A BOM
+ * is whitespace to `\s` but invisible when displayed, so it is kept: a word broken by one reads whole.
+ */
+export function impactTexts(description: string): string[] {
+  return splitLines(description)
+    .filter((line) => IMPACT_LINE.test(line))
+    .map((line) =>
+      line
+        .replace(IMPACT_LINE, '')
+        .replace(/[^\S\uFEFF]+/g, ' ')
+        .trim(),
+    )
+    .filter((text) => text !== '');
 }
 
 function validateImpact(patch: SectionPatch): string[] {

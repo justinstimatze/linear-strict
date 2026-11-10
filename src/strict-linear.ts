@@ -27,7 +27,7 @@ import {
   stripMarker,
   readSection,
   withoutGeneratedBlocks,
-  impactText,
+  impactTexts,
 } from './sections.js';
 import {
   type AttachmentNode,
@@ -295,8 +295,8 @@ export interface SignOffAnswer {
  * differs only in whitespace or its robot prefix, is no change anyone needs to approve.
  */
 function impactChange(before: string, after: string): ImpactChange | undefined {
-  const was = impactText(before);
-  const now = impactText(after) ?? '';
+  const was = impactTexts(before).join(' / ');
+  const now = impactTexts(after).join(' / ');
   return was && was !== now ? { before: was, after: now } : undefined;
 }
 
@@ -1433,7 +1433,7 @@ export class StrictLinear {
       ...(risk?.trim()
         ? [
             '',
-            `${dropped.length > 0 ? 'What stops being checked' : 'What approving gives up'}: ${risk.trim()}`,
+            `${dropped.length > 0 ? (impact ? 'What stops being checked or promised' : 'What stops being checked') : 'What approving gives up'}: ${risk.trim()}`,
           ]
         : []),
       ...(note ? ['', `${judged ? 'The judge wrote' : 'They wrote'}: ${note}`] : []),

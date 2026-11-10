@@ -16,7 +16,7 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { doneWhenDropped } from './done-when.js';
-import { readSection, sectionsNamed } from './sections.js';
+import { impactText, readSection, sectionsNamed } from './sections.js';
 
 export interface Check {
   id: string;
@@ -152,10 +152,8 @@ function sectionOf(description: string, heading: string): string[] | string | nu
   return only?.heading.trimEnd() === heading ? only.body : null;
 }
 
-/** The text after `Impact:` on the first line that carries it, or null. An empty one is null. */
-function readImpactLine(description: string): string | null {
-  return /(?:^|\n)\W*Impact:[ \t]*(.*)/i.exec(description)?.[1]?.trim() || null;
-}
+/** The text of the first Impact line, or null; the one reader the sign-off guard uses too. */
+const readImpactLine = impactText;
 
 /**
  * Only an Impact whose first word is "none" can say the work reached nobody, and "none of …" does not:
