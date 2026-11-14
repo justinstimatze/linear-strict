@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Rewording a ticket's existing Impact line now needs the same sign-off as a Done when descope: `set_state` with `descope_reason` and `descope_risk`, a yes from the person (or the judge), and a `descope` comment recording the old and new line and who approved it. The question shows `Impact today` and `Impact becomes`. Setting the first Impact line, through `set_state` or `create_issue`, and a change only in whitespace need nothing; a `comment` patch that rewords it is refused and pointed at `set_state`.
+
 ## 0.2.0 — 2026-10-02
 
 - `linear-strict/library` exports `StrictLinear`, `linearGql` and `OverlapRefusal`, so a script that files tickets goes through the same checks as an agent. An overlap refusal carries the close tickets as `candidates`.

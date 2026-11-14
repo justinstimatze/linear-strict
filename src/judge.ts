@@ -4,7 +4,7 @@ import { type ApiUsage, logUsage } from './usage-log.js';
 export const DEFAULT_JUDGE_MODEL = 'claude-opus-5-5';
 
 /** The same on every call, so it carries the cache marker. */
-const JUDGE_SYSTEM = `You review one proposed change to a ticket's "Done when" checklist on behalf of the person who owns the ticket. They are not being asked, so your verdict stands in for theirs, and it is recorded on the ticket with your reason for them to read later.
+const JUDGE_SYSTEM = `You review one proposed change to a ticket's "Done when" checklist, its Impact line, or both, on behalf of the person who owns the ticket. They are not being asked, so your verdict stands in for theirs, and it is recorded on the ticket with your reason for them to read later.
 
 An unticked Done when item is a check that has not passed yet. The agent proposing the change is usually the one that would otherwise have to pass that check, so it has a reason to make the check easier or to drop it.
 
@@ -17,6 +17,8 @@ Decline when:
 - the replacement is weaker than the original and nothing explains why the original cannot run;
 - the change drops the check that is the point of the ticket;
 - you cannot tell.
+
+The Impact line is the one plain-language sentence at the top of the ticket saying who notices the work; it is what reaches the release notes. Rewording it changes what the ticket promises people. Approve when the description shows the work's reach really changed (scope moved to another ticket, the old line overclaimed, the audience is different) and the new line still says truthfully who notices. Decline when it narrows or softens the claim to fit work that fell short and nothing in the description explains why.
 
 A wrong decline costs a person a glance later. A wrong approval lets unverified work be marked done.
 
@@ -49,6 +51,8 @@ export function judgePrompt(request: SignOffRequest): string {
       );
     else if (added !== undefined) changes.push(`New check: ${added}`);
   }
+  if (request.impact)
+    changes.push(`Impact line today: ${request.impact.before}\nBecomes: ${request.impact.after}`);
   return [
     `Ticket ${request.identifier}: ${request.title}`,
     `The description as it stands:\n<description>\n${request.description}\n</description>`,

@@ -348,13 +348,22 @@ describe('a ## Checks section as Linear stores it', () => {
   });
 
   it('counts a ticked check stored as - [X] toward the Impact it quotes', async () => {
-    const { strict, state } = setup(withChecks(ticked(C1)));
+    const { strict, state, asked } = setup(withChecks(ticked(C1)));
     const C2 =
       '- [ ] C2 · walk alpha/visitor · a reset time shows <!-- from impact "sees the cap and the reset time" -->';
-    await strict.setState('ENG-1', [
-      { section: 'Impact', mode: 'replace', body: 'a visitor sees the cap and the reset time' },
-      { section: 'Checks', mode: 'append', body: C2 },
-    ]);
+    // Widening an existing Impact is a rewording, so it carries the sign-off arguments.
+    await strict.setState(
+      'ENG-1',
+      [
+        { section: 'Impact', mode: 'replace', body: 'a visitor sees the cap and the reset time' },
+        { section: 'Checks', mode: 'append', body: C2 },
+      ],
+      SIGNED,
+    );
+    expect(asked[0]?.impact).toEqual({
+      before: 'a visitor sees the cap',
+      after: 'a visitor sees the cap and the reset time',
+    });
     expect(state.issue.description).toContain('Impact: a visitor sees the cap and the reset time');
     expect(fake.parseChecks(withChecks(ticked(C1)))).toMatchObject({
       checks: [{ id: 'C1', ticked: true }],

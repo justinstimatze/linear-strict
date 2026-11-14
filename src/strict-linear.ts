@@ -27,6 +27,7 @@ import {
   stripMarker,
   readSection,
   withoutGeneratedBlocks,
+  impactTexts,
 } from './sections.js';
 import {
   type AttachmentNode,
@@ -175,11 +176,11 @@ export interface SetStateOptions {
   reconciled_through?: string | undefined;
   /** How each comment the marker moves past is accounted for. */
   accounts_for?: Accounting[] | undefined;
-  /** Why an unticked Done when item may be dropped or reworded. */
+  /** Why a Done when item may be dropped or reworded, or the Impact line reworded. */
   descope_reason?: string | undefined;
   /** description_sha of the description the patch was written against. */
   base?: string | undefined;
-  /** What stops being checked if the descope is approved. */
+  /** What stops being checked or promised if the descope is approved. */
   descope_risk?: string | undefined;
   /** The token of a sign-off question asked earlier, on the retry. */
   sign_off?: string | undefined;
@@ -244,6 +245,12 @@ export interface StrictLinearOptions {
   releaseNoteLabels?: ReleaseNoteLabels | null | undefined;
 }
 
+/** An existing Impact line a patch rewords: what it said, and what it would say. */
+export interface ImpactChange {
+  before: string;
+  after: string;
+}
+
 export interface SignOffRequest {
   identifier: string;
   title: string;
@@ -251,6 +258,8 @@ export interface SignOffRequest {
   dropped: string[];
   /** Items the patch puts in, in order, so a rewording can be shown as one. */
   added: string[];
+  /** The Impact line, when the patch rewords one that was already there. */
+  impact?: ImpactChange | undefined;
   /** Why the agent wants it. */
   reason: string;
   /** What stops being checked if the person approves, in the agent's words. */
@@ -279,6 +288,16 @@ export interface SignOffAnswer {
   signer?: 'person' | 'judge' | undefined;
   /** For a judge: the model that decided. */
   model?: string | undefined;
+}
+
+/**
+ * The change to an Impact line that was already there, or undefined: a first Impact, or one that
+ * differs only in whitespace or its robot prefix, is no change anyone needs to approve.
+ */
+function impactChange(before: string, after: string): ImpactChange | undefined {
+  const was = impactTexts(before).join(' / ');
+  const now = impactTexts(after).join(' / ');
+  return was && was !== now ? { before: was, after: now } : undefined;
 }
 
 /**
@@ -1273,7 +1292,7 @@ export class StrictLinear {
       ? await this.reconcile(issue, reconciledThrough, accountsFor, patches.length > 0)
       : null;
 
-    const { dropped, note, signer, model } = await this.checkDescope(
+    const { dropped, impact, note, signer, model } = await this.checkDescope(
       issue,
       next,
       descopeReason,
@@ -1288,8 +1307,8 @@ export class StrictLinear {
       reconciled?.moved,
     );
     const descope =
-      dropped.length > 0 && descopeReason
-        ? await this.postDescope(issue, dropped, descopeReason, descopeRisk, {
+      (dropped.length > 0 || impact) && descopeReason
+        ? await this.postDescope(issue, dropped, impact, descopeReason, descopeRisk, {
             note,
             signer,
             model,
@@ -1377,10 +1396,11 @@ export class StrictLinear {
     return { moved, marker, accounting };
   }
 
-  /** Records an approved descope as a comment, naming who signed off and why. */
+  /** Records an approved descope as a comment, naming what changed, who signed off and why. */
   private async postDescope(
     issue: IssueCore,
     dropped: string[],
+    impact: ImpactChange | undefined,
     reason: string,
     risk: string | undefined,
     {
@@ -1392,22 +1412,37 @@ export class StrictLinear {
     const viewer = await this.viewer();
     const label = viewer.app ? nameOf(viewer) : `agent via ${nameOf(viewer)}`;
     const judged = signer === 'judge';
+    const approval = judged
+      ? `approved by a model judge (${model ?? 'unknown model'}) standing in for the person, who was not asked:`
+      : `with sign-off from the person at the client:`;
     const body = [
       `🤖 ${label} · ${this.today()} · descope`,
       '',
-      judged
-        ? `Dropped from Done when, approved by a model judge (${model ?? 'unknown model'}) standing in for the person, who was not asked:`
-        : `Dropped from Done when, with sign-off from the person at the client:`,
-      ...dropped.map((item) => `- ${item}`),
-      '',
+      ...(dropped.length > 0
+        ? [`Dropped from Done when, ${approval}`, ...dropped.map((item) => `- ${item}`), '']
+        : []),
+      ...(impact
+        ? [
+            `Impact line changed, ${approval}`,
+            `- Was: ${impact.before}`,
+            `- Now: ${impact.after}`,
+            '',
+          ]
+        : []),
       `Reason: ${reason.trim()}`,
-      ...(risk?.trim() ? ['', `What stops being checked: ${risk.trim()}`] : []),
+      ...(risk?.trim()
+        ? [
+            '',
+            `${dropped.length > 0 ? (impact ? 'What stops being checked or promised' : 'What stops being checked') : 'What approving gives up'}: ${risk.trim()}`,
+          ]
+        : []),
       ...(note ? ['', `${judged ? 'The judge wrote' : 'They wrote'}: ${note}`] : []),
     ].join('\n');
     try {
       const comment = await this.postComment(issue.id, body);
       return {
         dropped,
+        ...(impact ? { impact } : {}),
         reason: reason.trim(),
         signed_off: true,
         signed_off_by: judged ? `judge (${model ?? 'unknown model'})` : 'person',
@@ -1415,7 +1450,7 @@ export class StrictLinear {
       };
     } catch (error) {
       throw new Error(
-        `The description was written without ${dropped.join('; ')}, but the descope comment recording the reason did not post: ${errorMessage(error)}. Post the reason with comment kind evidence.`,
+        `The description was written ${[dropped.length > 0 ? `without ${dropped.join('; ')}` : null, impact ? `with the Impact line "${impact.after}" in place of "${impact.before}"` : null].filter(Boolean).join(' and ')}, but the descope comment recording the reason did not post: ${errorMessage(error)}. Post the reason with comment kind evidence.`,
         { cause: error },
       );
     }
@@ -1424,8 +1459,11 @@ export class StrictLinear {
   /**
    * Dropping or rewording an unticked Done when item is removing a check,
    * which the agent that would otherwise fail it does not get to do alone:
-   * it needs a reason and a yes from the person at the client. Returns the
-   * dropped items once approved; throws otherwise, before anything is written.
+   * it needs a reason and a yes from the person at the client. Rewording an
+   * Impact line that was already there is the same kind of change to what the
+   * ticket promises, and gets the same sign-off; writing the first one does
+   * not. Returns the dropped items and the Impact change once approved;
+   * throws otherwise, before anything is written.
    */
   private async checkDescope(
     issue: IssueCore,
@@ -1440,11 +1478,12 @@ export class StrictLinear {
     const dropped = checks
       ? [...notMigrated(checks, before, next), ...droppedChecksById(checks, before, next)]
       : droppedChecks(before, next);
-    if (dropped.length === 0) {
+    const impact = impactChange(before, next);
+    if (dropped.length === 0 && !impact) {
       checkNothingDropped(reason, token);
-      return { dropped, note: undefined, signer: undefined, model: undefined };
+      return { dropped, impact, note: undefined, signer: undefined, model: undefined };
     }
-    const { reason: why, risk: what } = checkDescopeArgs(dropped, via, reason, risk);
+    const { reason: why, risk: what } = checkDescopeArgs(dropped, via, reason, risk, impact);
     const raw = this.signOff
       ? await this.signOff({
           identifier: issue.identifier,
@@ -1454,6 +1493,7 @@ export class StrictLinear {
             ...addedChecks(before, next),
             ...(checks ? addedChecksById(checks, before, next) : []),
           ],
+          ...(impact ? { impact } : {}),
           reason: why,
           risk: what,
           description: issue.description ?? '',
@@ -1461,8 +1501,14 @@ export class StrictLinear {
         })
       : 'unavailable';
     const answer: SignOffAnswer = typeof raw === 'string' ? { outcome: raw } : raw;
-    if (answer.outcome !== 'approved') throw new Error(signOffRefusal(answer, dropped));
-    return { dropped, note: answer.note, signer: answer.signer ?? 'person', model: answer.model };
+    if (answer.outcome !== 'approved') throw new Error(signOffRefusal(answer, dropped, impact));
+    return {
+      dropped,
+      impact,
+      note: answer.note,
+      signer: answer.signer ?? 'person',
+      model: answer.model,
+    };
   }
 
   /** The sections a write may patch: Checks only on a team that uses one. */

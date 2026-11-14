@@ -420,7 +420,7 @@ export const strictToolDefinitions: MCPToolDefinition[] = [
   {
     name: 'set_state',
     description:
-      'Change what the ticket says is true by patching named description sections (Observed, Cause, Fix, Done when). The description is current state; comments are the log. Pass reconciled_through (a comment id) to record that the description now reflects the thread through that comment, with accounts_for saying how each skipped comment was handled. Tick a Done when item only once its check has run, and cite what showed it after the item text: "- [x] <item> · <evidence>", where evidence is a commit SHA, a PR (#123), a file:line, a link, a CI run, "Observed 2" for a line under Observed, or `command` → result. A merge, a deploy, or being told something shipped is not the check; if nobody has run it, leave it open and say so. Removing or rewording a Done when item, ticked or not, needs descope_reason and descope_risk (unticking it with its text kept, or changing only its citation, does not), and your user is asked to approve it from those two alone, so write them for someone without the ticket open. In Claude Code the call may come back asking you to put a question to your user with AskUserQuestion first; do exactly that, then retry with the sign_off token it gives.',
+      'Change what the ticket says is true by patching named description sections (Observed, Cause, Fix, Done when). The description is current state; comments are the log. Pass reconciled_through (a comment id) to record that the description now reflects the thread through that comment, with accounts_for saying how each skipped comment was handled. Tick a Done when item only once its check has run, and cite what showed it after the item text: "- [x] <item> · <evidence>", where evidence is a commit SHA, a PR (#123), a file:line, a link, a CI run, "Observed 2" for a line under Observed, or `command` → result. A merge, a deploy, or being told something shipped is not the check; if nobody has run it, leave it open and say so. Removing or rewording a Done when item, ticked or not, needs descope_reason and descope_risk (unticking it with its text kept, or changing only its citation, does not), and so does rewording an Impact line the ticket already has (writing the first one, or changing only its whitespace, does not); your user is asked to approve it from those two alone, so write them for someone without the ticket open. In Claude Code the call may come back asking you to put a question to your user with AskUserQuestion first; do exactly that, then retry with the sign_off token it gives.',
     input_schema: {
       type: 'object',
       properties: {
@@ -434,13 +434,13 @@ export const strictToolDefinitions: MCPToolDefinition[] = [
         descope_risk: {
           type: 'string',
           description:
-            'Required with descope_reason: what stops being checked if your user approves, and what could get through because of it. At most 100 characters; they see it on one line as "If you accept".',
+            'Required with descope_reason: what stops being checked if your user approves, and what could get through because of it; for an Impact rewording, what the ticket stops promising. At most 100 characters; they see it on one line as "If you accept".',
           maxLength: 100,
         },
         descope_reason: {
           type: 'string',
           description:
-            'Required when the patch removes or rewords a Done when item, ticked or not: why that check no longer applies. At most 100 characters; your user sees it on one line as "Why the agent wants it", and it is recorded as a comment. Keep the detail in Observed.',
+            'Required when the patch removes or rewords a Done when item, ticked or not, or rewords an existing Impact line: why that check no longer applies, or why the Impact changed. At most 100 characters; your user sees it on one line as "Why the agent wants it", and it is recorded as a comment. Keep the detail in Observed.',
           maxLength: 100,
         },
         sign_off: {

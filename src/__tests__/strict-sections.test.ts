@@ -1,5 +1,6 @@
 import {
   addQuestion,
+  impactText,
   answerQuestion,
   applySectionPatches,
   commentKind,
@@ -215,6 +216,22 @@ describe('the Impact line', () => {
     ]);
     expect(replaced).toBe(`Impact: none, internal maintenance.\n\n${BODY}`);
     expect(lintDescription(replaced)).toEqual([]);
+  });
+
+  it('reads an Impact line with markup another client put around it, and replaces it rather than keeping two', () => {
+    for (const line of [
+      '**Impact:** old claim',
+      '- Impact: old claim',
+      '> Impact: old claim',
+      '🤖 Impact: old claim',
+    ]) {
+      expect(impactText(`${line}\n\n${BODY}`)).toBe('old claim');
+      expect(
+        applySectionPatches(`${line}\n\n${BODY}`, [
+          { section: 'Impact', mode: 'replace', body: 'new claim' },
+        ]),
+      ).toBe(`Impact: new claim\n\n${BODY}`);
+    }
   });
 
   it('moves an Impact line written elsewhere to the top instead of keeping two', () => {
