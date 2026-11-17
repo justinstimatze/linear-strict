@@ -2,6 +2,7 @@ import { memoryClaimStore } from '../claims.js';
 import {
   parseReleaseNoteLine,
   releaseNoteFindings,
+  releaseNoteGateFromEnv,
   releaseNoteLabelsFromEnv,
 } from '../release-note.js';
 import type { TeamRouting } from '../route.js';
@@ -12,7 +13,11 @@ const YES_LABEL = { id: 'l-rn', name: 'release-note', isGroup: false };
 const PAIR_LABELS = [YES_LABEL, { id: 'l-rn-none', name: 'release-note-none', isGroup: false }];
 const SELFHOST_LABEL = { id: 'l-rn-selfhost', name: 'release-note-selfhost', isGroup: false };
 
-function setup(overrides: Partial<FakeState> = {}, teamRouting?: TeamRouting) {
+function setup(
+  overrides: Partial<FakeState> = {},
+  teamRouting?: TeamRouting,
+  releaseNoteGate: 'warn' | 'block' = 'block',
+) {
   const state = fakeState({ projects: [], ...overrides });
   state.labels.push(...PAIR_LABELS);
   const strict = new StrictLinear({
@@ -20,6 +25,7 @@ function setup(overrides: Partial<FakeState> = {}, teamRouting?: TeamRouting) {
     claims: memoryClaimStore(),
     now: () => new Date('2026-11-01T12:00:00Z'),
     teamRouting,
+    releaseNoteGate,
   });
   return { state, strict };
 }
@@ -262,7 +268,7 @@ describe('the Release note section on set_state', () => {
   });
 });
 
-describe('set_status refuses to ship a release-note ticket without its line', () => {
+describe('set_status with LINEAR_STRICT_RELEASE_NOTE_GATE=block refuses to ship a release-note ticket without its line', () => {
   const shipStates = [
     { id: 's-todo', name: 'Todo', type: 'unstarted' },
     { id: 's-progress', name: 'In Progress', type: 'started' },
@@ -311,6 +317,27 @@ describe('set_status refuses to ship a release-note ticket without its line', ()
     });
     state.issue.labels = ['release-note-none'];
     await expect(strict.setStatus('ENG-1', 'Merged')).resolves.toMatchObject({ state: 'Merged' });
+  });
+
+  it('by default warns instead: the move lands and the result names the missing line', async () => {
+    const { state, strict } = setup({ states: shipStates }, undefined, 'warn');
+    state.issue.labels = ['release-note'];
+    const result = await strict.setStatus('ENG-1', 'Verify');
+    expect(state.issue.stateId).toBe('s-verify');
+    expect(result).toMatchObject({
+      state: 'Verify',
+      release_note_missing: expect.stringMatching(
+        /^ENG-1 moved to Verify, but it is labelled "release-note" and has no ## Release note section[\s\S]*set_state/,
+      ) as string,
+    });
+  });
+
+  it('reads the mode from LINEAR_STRICT_RELEASE_NOTE_GATE, warn unless it says block', () => {
+    expect(releaseNoteGateFromEnv({})).toBe('warn');
+    expect(releaseNoteGateFromEnv({ LINEAR_STRICT_RELEASE_NOTE_GATE: 'Block' })).toBe('block');
+    expect(() => releaseNoteGateFromEnv({ LINEAR_STRICT_RELEASE_NOTE_GATE: 'on' })).toThrow(
+      /"warn" or "block"/,
+    );
   });
 
   it('flags a malformed line on get_issue', async () => {

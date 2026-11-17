@@ -146,6 +146,7 @@ import {
   RELEASE_NOTE_SECTION,
   releaseNoteArg,
   type ReleaseNote,
+  type ReleaseNoteGate,
   type ReleaseNoteLabels,
   releaseNoteFindings,
   releaseNoteGateRefusal,
@@ -247,6 +248,12 @@ export interface StrictLinearOptions {
    * release-note-none and the optional release-note-selfhost.
    */
   releaseNoteLabels?: ReleaseNoteLabels | null | undefined;
+  /**
+   * What set_status does when a release-note ticket moves to Merged, Verify or Done without a
+   * well-formed Release note line: "warn" (the default) moves it and returns release_note_missing;
+   * "block" refuses the move.
+   */
+  releaseNoteGate?: ReleaseNoteGate | undefined;
 }
 
 export interface SignOffRequest {
@@ -336,6 +343,7 @@ export class StrictLinear {
   private readonly checks: ChecksRules | undefined;
   private readonly titles: TeamTitles;
   private readonly releaseNotePair: ReleaseNoteLabels | null;
+  private readonly releaseNoteGate: ReleaseNoteGate;
   /** Each team's release-note label ids, read at most once every ten minutes. */
   private readonly releaseNoteCache = new Map<
     string,
@@ -356,6 +364,7 @@ export class StrictLinear {
     this.teamRouting = options.teamRouting;
     this.checks = options.checks;
     this.titles = new TeamTitles(this.gql);
+    this.releaseNoteGate = options.releaseNoteGate ?? 'warn';
     this.releaseNotePair =
       options.releaseNoteLabels === undefined
         ? { yes: 'release-note', none: 'release-note-none', selfhost: 'release-note-selfhost' }
@@ -1899,6 +1908,7 @@ export class StrictLinear {
       );
     }
 
+    let releaseNoteMissing: string | null = null;
     if (releaseNoteGatesState(target)) {
       const pair = issue.team ? await this.releaseNoteLabels(issue.team.id) : null;
       const refusal = releaseNoteGateRefusal(
@@ -1908,7 +1918,10 @@ export class StrictLinear {
         pair,
         releaseNoteBody(issue.description ?? ''),
       );
-      if (refusal) throw new Error(refusal);
+      if (refusal && this.releaseNoteGate === 'block') throw new Error(refusal);
+      releaseNoteMissing = refusal
+        ? refusal.replace(/^Refusing to move (\S+) to ([^:]+): /, '$1 moved to $2, but ')
+        : null;
     }
 
     const { unchecked, branchUnchecked } =
@@ -1938,6 +1951,7 @@ export class StrictLinear {
       state: target.name,
       updatedAt: updated.updatedAt,
       ...(reasonComment ? { reason_comment: reasonComment } : {}),
+      ...(releaseNoteMissing ? { release_note_missing: releaseNoteMissing } : {}),
       ...(unchecked.length > 0
         ? {
             unchecked_prs: `Linear's GitHub attachment gave no merge status for ${unchecked.join(', ')}, so whether ${unchecked.length === 1 ? 'it' : 'they'} merged was not checked.`,

@@ -171,6 +171,15 @@ export function releaseNoteSectionState(
   return body.trim().replace(/^[-*]\s+/, '') === 'NONE' ? 'none' : 'line';
 }
 
+export type ReleaseNoteGate = 'warn' | 'block';
+
+/** `LINEAR_STRICT_RELEASE_NOTE_GATE`: "warn" (default) or "block". */
+export function releaseNoteGateFromEnv(env: Record<string, string | undefined>): ReleaseNoteGate {
+  const raw = env['LINEAR_STRICT_RELEASE_NOTE_GATE']?.trim().toLowerCase() || 'warn';
+  if (raw === 'warn' || raw === 'block') return raw;
+  throw new Error('LINEAR_STRICT_RELEASE_NOTE_GATE must be "warn" or "block"');
+}
+
 /** Workflow states that mean the work shipped, or is about to: a release-note ticket needs its line first. */
 const SHIPPED_STATE_NAMES = ['merged', 'verify', 'done'];
 

@@ -23,7 +23,7 @@ import { type OverlapReader, overlapReader } from './overlap-model.js';
 import { type Elicitor, elicitSignOff, previewSignOff } from './sign-off.js';
 import { defaultStateDir, fileSignOffStore } from './sign-off-store.js';
 import { guardInstance } from './single-instance.js';
-import { releaseNoteLabelsFromEnv } from './release-note.js';
+import { releaseNoteGateFromEnv, releaseNoteLabelsFromEnv } from './release-note.js';
 import { type SignOffRequest, StrictLinear } from './strict-linear.js';
 import { strictToolHandlers, toolDefinitionsFor } from './tools.js';
 
@@ -92,6 +92,7 @@ async function main(): Promise<void> {
             .map((label) => label.trim())
             .filter(Boolean),
           releaseNoteLabels: releaseNoteLabelsFromEnv(process.env),
+          releaseNoteGate: releaseNoteGateFromEnv(process.env),
           signOff,
           overlapReader: readOverlap,
           teamRouting,
