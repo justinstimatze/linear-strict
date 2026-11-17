@@ -412,7 +412,7 @@ describe('a team not listed in LINEAR_STRICT_CHECKS_TEAMS', () => {
     await expect(
       strict.setState('ENG-1', [{ section: 'Checks', mode: 'append', body: '- [ ] it works' }]),
     ).rejects.toThrow(
-      '"Checks" is not a known section (Impact, Observed, Cause, Fix, Done when, Open questions)',
+      '"Checks" is not a known section (Impact, Observed, Cause, Fix, Done when, Release note, Open questions)',
     );
     await expect(
       strict.setState('ENG-1', [{ section: 'Done when', mode: 'replace', body: '' }]),

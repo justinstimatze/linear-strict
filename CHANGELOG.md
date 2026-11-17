@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- A `## Release note` description section: one line, `<Added|Changed|Fixed|Removed|Security> · <Alpha|Gap Map|AI Potluck|Self-host> · <sentence> · flag: <key|none>`, or `NONE`, written with `set_state` or filed with `create_issue`. A release note can then print each ticket's own line instead of a model rewriting its Impact line. Writing `NONE` moves the ticket to `release-note-none` in the same update, and a line moves a `release-note-none` or unlabelled ticket to `release-note`. A `comment` patch cannot write the section, since it would leave the label behind. `get_issue` flags a line that does not parse (`release_note_line_invalid`).
+- Moving a `release-note` or `release-note-selfhost` ticket to Merged, Verify or a completed state without a Release note line that parses returns a `release_note_missing` warning naming the fix. `LINEAR_STRICT_RELEASE_NOTE_GATE=block` makes `set_status` refuse the move instead; the default is `warn`, so tickets filed before the line existed are not stranded.
+- `release_note` takes `selfhost`, recorded as `release-note-selfhost`, for changes only people running their own copy notice. The label is optional and is not created by the server: until a person creates it in the workspace, `selfhost` is refused. `LINEAR_STRICT_RELEASE_NOTE_LABELS` takes an optional third name for it.
+
 ## 0.2.0 — 2026-10-02
 
 - `linear-strict/library` exports `StrictLinear`, `linearGql` and `OverlapRefusal`, so a script that files tickets goes through the same checks as an agent. An overlap refusal carries the close tickets as `candidates`.
