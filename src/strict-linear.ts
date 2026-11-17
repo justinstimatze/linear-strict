@@ -143,11 +143,17 @@ import {
 import { checkDescopeArgs, checkNothingDropped, signOffRefusal } from './descope.js';
 import {
   RELEASE_NOTE_RUBRIC,
+  RELEASE_NOTE_SECTION,
   releaseNoteArg,
   type ReleaseNote,
+  type ReleaseNoteGate,
   type ReleaseNoteLabels,
   releaseNoteFindings,
+  releaseNoteGateRefusal,
+  releaseNoteGatesState,
   releaseNoteLabelChanges,
+  releaseNoteOf,
+  releaseNoteSectionState,
   type ResolvedReleaseNoteLabels,
   resolveReleaseNoteLabels,
 } from './release-note.js';
@@ -238,10 +244,16 @@ export interface StrictLinearOptions {
   teamRouting?: TeamRouting | undefined;
   /**
    * The label pair that says whether a ticket belongs in the release notes. It takes effect on a
-   * team only where both labels exist; null turns it off. Defaults to release-note and
-   * release-note-none.
+   * team only where the yes and none labels exist; null turns it off. Defaults to release-note,
+   * release-note-none and the optional release-note-selfhost.
    */
   releaseNoteLabels?: ReleaseNoteLabels | null | undefined;
+  /**
+   * What set_status does when a release-note ticket moves to Merged, Verify or Done without a
+   * well-formed Release note line: "warn" (the default) moves it and returns release_note_missing;
+   * "block" refuses the move.
+   */
+  releaseNoteGate?: ReleaseNoteGate | undefined;
 }
 
 export interface SignOffRequest {
@@ -331,6 +343,7 @@ export class StrictLinear {
   private readonly checks: ChecksRules | undefined;
   private readonly titles: TeamTitles;
   private readonly releaseNotePair: ReleaseNoteLabels | null;
+  private readonly releaseNoteGate: ReleaseNoteGate;
   /** Each team's release-note label ids, read at most once every ten minutes. */
   private readonly releaseNoteCache = new Map<
     string,
@@ -351,9 +364,10 @@ export class StrictLinear {
     this.teamRouting = options.teamRouting;
     this.checks = options.checks;
     this.titles = new TeamTitles(this.gql);
+    this.releaseNoteGate = options.releaseNoteGate ?? 'warn';
     this.releaseNotePair =
       options.releaseNoteLabels === undefined
-        ? { yes: 'release-note', none: 'release-note-none' }
+        ? { yes: 'release-note', none: 'release-note-none', selfhost: 'release-note-selfhost' }
         : options.releaseNoteLabels;
     this.principalWorkspace = options.principal
       ? new StrictWorkspace(options.principal.gql, this.now)
@@ -699,6 +713,7 @@ export class StrictLinear {
           issue.state,
           issue.labels.nodes.map((label) => label.name),
           releaseNote,
+          releaseNoteBody(description),
         ),
       ],
       drift,
@@ -1185,7 +1200,12 @@ export class StrictLinear {
    * read it. That narrows the window in which a patch would overwrite another
    * writer's change to the time between those two requests.
    */
-  private async writeDescription(issue: IssueCore, next: string, marker?: StoredMarker) {
+  private async writeDescription(
+    issue: IssueCore,
+    next: string,
+    marker?: StoredMarker,
+    alsoSet: Record<string, unknown> = {},
+  ) {
     const viewer = await this.viewer();
     // A marker line left in the description from before markers moved to an attachment goes with this write.
     next = stripMarker(next);
@@ -1198,10 +1218,15 @@ export class StrictLinear {
     }
     // A write that changes nothing still rebuilds Linear's rich-text document, dropping its text
     // attribution, so the same text is not sent again. The marker below may still move.
+    // alsoSet rides in the same update (the release-note label that follows a Release note line).
+    const extra = Object.keys(alsoSet).length > 0;
     const updated =
-      next === before
+      next === before && !extra
         ? { updatedAt: issue.updatedAt, description: before }
-        : await this.updateIssue(issue.id, { description: next });
+        : await this.updateIssue(issue.id, {
+            ...(next === before ? {} : { description: next }),
+            ...alsoSet,
+          });
     const written = updated.description ?? '';
 
     const claim = this.claims.get(issue.id, viewer.id);
@@ -1268,6 +1293,11 @@ export class StrictLinear {
     this.checkBase(issue, base);
     const next = applySectionPatches(issue.description ?? '', patches, this.patchable(issue));
     await this.checkChecks(issue, issue.description ?? '', next);
+    const labelSync = patches.some(
+      (p) => p.section.trim().toLowerCase() === RELEASE_NOTE_SECTION.toLowerCase(),
+    )
+      ? await this.releaseNoteLabelSync(issue, next)
+      : null;
 
     const reconciled = reconciledThrough
       ? await this.reconcile(issue, reconciledThrough, accountsFor, patches.length > 0)
@@ -1286,6 +1316,7 @@ export class StrictLinear {
       issue,
       next,
       reconciled?.moved,
+      labelSync?.input ?? {},
     );
     const descope =
       dropped.length > 0 && descopeReason
@@ -1299,6 +1330,7 @@ export class StrictLinear {
       identifier: issue.identifier,
       updated_sections: patchSummary(patches),
       description_sha: this.remember(written),
+      ...(labelSync?.note ? { release_note: labelSync.note } : {}),
       ...(reconciled
         ? { reconciled_through: reconciled.marker, accounted: reconciled.accounting }
         : {}),
@@ -1465,11 +1497,55 @@ export class StrictLinear {
     return { dropped, note: answer.note, signer: answer.signer ?? 'person', model: answer.model };
   }
 
-  /** The sections a write may patch: Checks only on a team that uses one. */
-  private patchable(issue: IssueCore) {
-    return checksApply(this.checks, issue.team?.key)
+  /**
+   * The sections a write may patch: Checks only on a team that uses one, and Release note only through
+   * set_state, which moves the release-note label with it.
+   */
+  private patchable(issue: IssueCore, releaseNote = true) {
+    const sections = checksApply(this.checks, issue.team?.key)
       ? CHECKS_PATCHABLE_SECTIONS
       : PATCHABLE_SECTIONS;
+    return releaseNote ? sections : sections.filter((name) => name !== RELEASE_NOTE_SECTION);
+  }
+
+  /**
+   * The label change that keeps a ticket's release-note label in step with the Release note line
+   * `next` holds: NONE moves it to the none label, and a line moves a none or unlabelled ticket to the
+   * yes label (a self-host ticket keeps its own). Null input when the labels already agree, or the
+   * workspace lacks them, which the note then says.
+   */
+  private async releaseNoteLabelSync(
+    issue: IssueCore,
+    next: string,
+  ): Promise<{ input: Record<string, unknown>; note?: string } | null> {
+    const state = releaseNoteSectionState(releaseNoteBody(next));
+    if (state !== 'none' && state !== 'line') return null;
+    const pair = issue.team ? await this.releaseNoteLabels(issue.team.id) : null;
+    if (!pair)
+      return {
+        input: {},
+        note: 'this workspace has no release-note labels, so only the line was written',
+      };
+    const carried = issue.labels.nodes.map((label) => label.name);
+    const now = releaseNoteOf(carried, pair);
+    const want: ReleaseNote =
+      state === 'none' ? 'none' : now === 'yes' || now === 'selfhost' ? now : 'yes';
+    if (now === want) return null;
+    const ids: Record<ReleaseNote, string | null> = pair.ids;
+    const add = ids[want];
+    if (!add) return null;
+    const { remove } = releaseNoteLabelChanges(want, pair);
+    const removeIds = issue.labels.nodes
+      .filter((label) => remove.some((name) => name.toLowerCase() === label.name.toLowerCase()))
+      .map((label) => label.id);
+    const label = want === 'none' ? pair.none : pair.yes;
+    return {
+      input: {
+        addedLabelIds: [add],
+        ...(removeIds.length > 0 ? { removedLabelIds: removeIds } : {}),
+      },
+      note: `labelled "${label}" to match the Release note line`,
+    };
   }
 
   /**
@@ -1523,7 +1599,7 @@ export class StrictLinear {
     // Validate everything before the first write, so a refusal writes nothing.
     let description = issue.description ?? '';
     if (patch.length > 0) {
-      description = applySectionPatches(description, patch, this.patchable(issue));
+      description = applySectionPatches(description, patch, this.patchable(issue, false));
       await this.checkChecks(issue, issue.description ?? '', description);
       await this.checkDescope(issue, description, undefined, 'comment');
     }
@@ -1703,6 +1779,11 @@ export class StrictLinear {
     const viewer = await this.viewer();
     if (changes.release_note !== undefined) {
       const pair = issue.team ? await this.releaseNoteLabels(issue.team.id) : null;
+      if (pair && changes.release_note === 'selfhost' && !pair.selfhost) {
+        throw new Error(
+          `release_note "selfhost" needs the label "${this.releaseNotePair?.selfhost ?? 'release-note-selfhost'}" on ${issue.team?.key ?? 'this team'} or the workspace, and it is not there. Labels are not created here; a person creates it in the workspace's release-note label group.`,
+        );
+      }
       if (!pair) {
         throw new Error(
           `release_note needs the labels "${this.releaseNotePair?.yes ?? 'release-note'}" and "${this.releaseNotePair?.none ?? 'release-note-none'}" on ${issue.team?.key ?? 'this team'} or the workspace, and they are not both there. Labels are not created here.`,
@@ -1717,7 +1798,7 @@ export class StrictLinear {
       changes = {
         ...changes,
         add_labels: [...(changes.add_labels ?? []), ...(has(add) ? [] : [add])],
-        remove_labels: [...(changes.remove_labels ?? []), ...(has(remove) ? [remove] : [])],
+        remove_labels: [...(changes.remove_labels ?? []), ...remove.filter(has)],
       };
     }
     const { input, changed, relations, pullRequests, delegateTakenFrom } = await resolveFields(
@@ -1827,6 +1908,22 @@ export class StrictLinear {
       );
     }
 
+    let releaseNoteMissing: string | null = null;
+    if (releaseNoteGatesState(target)) {
+      const pair = issue.team ? await this.releaseNoteLabels(issue.team.id) : null;
+      const refusal = releaseNoteGateRefusal(
+        issue.identifier,
+        target.name,
+        issue.labels.nodes.map((label) => label.name),
+        pair,
+        releaseNoteBody(issue.description ?? ''),
+      );
+      if (refusal && this.releaseNoteGate === 'block') throw new Error(refusal);
+      releaseNoteMissing = refusal
+        ? refusal.replace(/^Refusing to move (\S+) to ([^:]+): /, '$1 moved to $2, but ')
+        : null;
+    }
+
     const { unchecked, branchUnchecked } =
       target.type === 'completed'
         ? await this.checkDoneGate(
@@ -1854,6 +1951,7 @@ export class StrictLinear {
       state: target.name,
       updatedAt: updated.updatedAt,
       ...(reasonComment ? { reason_comment: reasonComment } : {}),
+      ...(releaseNoteMissing ? { release_note_missing: releaseNoteMissing } : {}),
       ...(unchecked.length > 0
         ? {
             unchecked_prs: `Linear's GitHub attachment gave no merge status for ${unchecked.join(', ')}, so whether ${unchecked.length === 1 ? 'it' : 'they'} merged was not checked.`,
@@ -2102,9 +2200,31 @@ export class StrictLinear {
     const releaseNotePair = await this.releaseNoteLabels(team.id);
     let releaseNote: ReleaseNote | undefined;
     if (releaseNotePair) {
+      // A Release note section filed with the ticket decides the label too, so the two cannot disagree.
+      const line =
+        description === undefined
+          ? 'missing'
+          : releaseNoteSectionState(releaseNoteBody(description));
+      const fromLine: ReleaseNote | undefined =
+        line === 'none'
+          ? 'none'
+          : line === 'line'
+            ? releaseNoteGiven === 'selfhost'
+              ? 'selfhost'
+              : 'yes'
+            : undefined;
+      if (fromLine && releaseNoteGiven && fromLine !== releaseNoteGiven)
+        problems.push(
+          `release_note "${releaseNoteGiven}" contradicts the Release note section, which ${line === 'none' ? 'says NONE' : 'holds a line'}; drop release_note and the section decides, or make them agree.`,
+        );
       releaseNote =
         releaseNoteGiven ??
+        fromLine ??
         (team.key.toUpperCase() === this.teamRouting?.fleetTeam ? 'none' : undefined);
+      if (releaseNote === 'selfhost' && !releaseNotePair.ids.selfhost)
+        problems.push(
+          `release_note "selfhost" needs the label "${this.releaseNotePair?.selfhost ?? 'release-note-selfhost'}", and ${team.key} and the workspace lack it. Labels are not created here; a person creates it in the workspace's release-note label group.`,
+        );
       if (releaseNote === undefined && args.release_note === undefined) {
         problems.push(
           `release_note is required on ${team.key}: say whether a visitor to production will notice this once it ships. ${RELEASE_NOTE_RUBRIC}`,
@@ -2174,7 +2294,9 @@ export class StrictLinear {
       ...(description !== undefined ? { description } : {}),
       ...(projectId ? { projectId } : {}),
       ...(parentId ? { parentId } : {}),
-      ...(releaseNotePair && releaseNote ? { labelIds: [releaseNotePair.ids[releaseNote]] } : {}),
+      ...(releaseNotePair && releaseNote && releaseNotePair.ids[releaseNote]
+        ? { labelIds: [releaseNotePair.ids[releaseNote]] }
+        : {}),
     };
     const data = await this.gql<{
       issueCreate: {
@@ -2293,4 +2415,13 @@ function citedPullRequestsMerged(
   return linked
     .filter((pr) => pr.status !== 'merged' && !unmerged.includes(pr))
     .map((pr) => `PR #${String(pr.number)}`);
+}
+
+/** The ## Release note section's text, or null when there is none or it is written twice. */
+function releaseNoteBody(description: string): string | null {
+  try {
+    return readSection(description, RELEASE_NOTE_SECTION);
+  } catch {
+    return null;
+  }
 }

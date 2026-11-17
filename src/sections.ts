@@ -10,12 +10,15 @@
  * never touched here.
  */
 
+import { releaseNoteBodyErrors } from './release-note.js';
+
 export const SECTION_ORDER = [
   'Observed',
   'Cause',
   'Fix',
   'Checks',
   'Done when',
+  'Release note',
   'Open questions',
 ] as const;
 export type SectionName = (typeof SECTION_ORDER)[number];
@@ -26,7 +29,13 @@ const sectionOrder = (checks: boolean): readonly SectionName[] =>
   checks ? SECTION_ORDER : WITHOUT_CHECKS;
 
 /** Sections set_state may write. Open questions changes only through ask/answer comments. */
-export const PATCHABLE_SECTIONS: readonly SectionName[] = ['Observed', 'Cause', 'Fix', 'Done when'];
+export const PATCHABLE_SECTIONS: readonly SectionName[] = [
+  'Observed',
+  'Cause',
+  'Fix',
+  'Done when',
+  'Release note',
+];
 
 /** The same, on a team whose tickets carry ## Checks (checks.ts). */
 export const CHECKS_PATCHABLE_SECTIONS: readonly SectionName[] = [
@@ -35,6 +44,7 @@ export const CHECKS_PATCHABLE_SECTIONS: readonly SectionName[] = [
   'Fix',
   'Checks',
   'Done when',
+  'Release note',
 ];
 
 /**
@@ -249,6 +259,9 @@ export function validateSectionBody(section: SectionName, body: string): string[
     }
   }
 
+  // One line a release note is assembled from verbatim (release-note.ts has the grammar).
+  if (section === 'Release note') errors.push(...releaseNoteBodyErrors(body));
+
   // Checks gets its full grammar from the project's rulebook (checks.ts); here only the shape.
   if (section === 'Done when' || section === 'Checks') {
     for (const line of lines) {
@@ -307,6 +320,8 @@ export function applySectionPatches(
       resolved.push({ name, mode: 'remove', body: '' });
       continue;
     }
+    if (name === 'Release note' && patch.mode !== 'replace')
+      errors.push('Release note: use mode "replace"; there is one line');
     errors.push(...validateSectionBody(name, patch.body));
     resolved.push({ name, mode: patch.mode, body: patch.body });
   }
