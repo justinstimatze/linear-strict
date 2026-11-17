@@ -123,7 +123,7 @@ const ISSUE_ARG = { type: 'string', description: 'Issue identifier (e.g. ENG-123
 const PATCH_SCHEMA = {
   type: 'array',
   description:
-    'Description sections to change. Impact is the one plain-language line at the top saying who notices this work (mode replace). Observed lines must be "YYYY-MM-DD · <source: command, SHA or query> · <what it showed>". Done when lines must be checklist items ("- [ ] <check that proves it>"). Open questions changes only through comment kinds ask and answer.',
+    'Description sections to change. Impact is the one plain-language line at the top saying who notices this work (mode replace). Observed lines must be "YYYY-MM-DD · <source: command, SHA or query> · <what it showed>". Done when lines must be checklist items ("- [ ] <check that proves it>"). Release note (mode replace, set_state and create_issue only) is the one line the release note prints for this ticket, written when the work ships: "<Added|Changed|Fixed|Removed|Security> · <Alpha|Gap Map|AI Potluck|Self-host> · <one sentence a visitor reads, second person, present tense> · flag: <PostHog flag key|none>", or NONE, which moves the ticket to the release-note-none label. Open questions changes only through comment kinds ask and answer.',
   items: {
     type: 'object',
     properties: {
@@ -420,7 +420,7 @@ export const strictToolDefinitions: MCPToolDefinition[] = [
   {
     name: 'set_state',
     description:
-      'Change what the ticket says is true by patching named description sections (Observed, Cause, Fix, Done when). The description is current state; comments are the log. Pass reconciled_through (a comment id) to record that the description now reflects the thread through that comment, with accounts_for saying how each skipped comment was handled. Tick a Done when item only once its check has run, and cite what showed it after the item text: "- [x] <item> · <evidence>", where evidence is a commit SHA, a PR (#123), a file:line, a link, a CI run, "Observed 2" for a line under Observed, or `command` → result. A merge, a deploy, or being told something shipped is not the check; if nobody has run it, leave it open and say so. Removing or rewording a Done when item, ticked or not, needs descope_reason and descope_risk (unticking it with its text kept, or changing only its citation, does not), and your user is asked to approve it from those two alone, so write them for someone without the ticket open. In Claude Code the call may come back asking you to put a question to your user with AskUserQuestion first; do exactly that, then retry with the sign_off token it gives.',
+      'Change what the ticket says is true by patching named description sections (Observed, Cause, Fix, Done when, Release note). The description is current state; comments are the log. Pass reconciled_through (a comment id) to record that the description now reflects the thread through that comment, with accounts_for saying how each skipped comment was handled. Tick a Done when item only once its check has run, and cite what showed it after the item text: "- [x] <item> · <evidence>", where evidence is a commit SHA, a PR (#123), a file:line, a link, a CI run, "Observed 2" for a line under Observed, or `command` → result. A merge, a deploy, or being told something shipped is not the check; if nobody has run it, leave it open and say so. Removing or rewording a Done when item, ticked or not, needs descope_reason and descope_risk (unticking it with its text kept, or changing only its citation, does not), and your user is asked to approve it from those two alone, so write them for someone without the ticket open. In Claude Code the call may come back asking you to put a question to your user with AskUserQuestion first; do exactly that, then retry with the sign_off token it gives.',
     input_schema: {
       type: 'object',
       properties: {
@@ -511,7 +511,7 @@ export const strictToolDefinitions: MCPToolDefinition[] = [
   {
     name: 'set_status',
     description:
-      'Move a ticket to a workflow state by name. Moving to a completed state (Done) needs a Done when section with every item ticked and cited, any cited PR linked here merged, a linked PR merged into the main branch when any merged at all (link a promotion PR with set_fields link_prs), and your claim, and refuses, returning the diff, if the description changed since you claimed it. This call carries no evidence of its own: write it into the description with set_state first, where this check and any close gate a project hooks onto this tool read it. Moving to a canceled state skips those checks, so it needs reason, which is posted as a comment.',
+      'Move a ticket to a workflow state by name. Moving to a completed state (Done) needs a Done when section with every item ticked and cited, any cited PR linked here merged, a linked PR merged into the main branch when any merged at all (link a promotion PR with set_fields link_prs), and your claim, and refuses, returning the diff, if the description changed since you claimed it. Moving a ticket labelled release-note or release-note-selfhost to Merged, Verify or a completed state needs a well-formed Release note line first (write it with set_state). This call carries no evidence of its own: write it into the description with set_state first, where this check and any close gate a project hooks onto this tool read it. Moving to a canceled state skips those checks, so it needs reason, which is posted as a comment.',
     input_schema: {
       type: 'object',
       properties: {
@@ -559,9 +559,9 @@ export const strictToolDefinitions: MCPToolDefinition[] = [
         remove_labels: { type: 'array', items: { type: 'string' } },
         release_note: {
           type: 'string',
-          enum: ['yes', 'none'],
+          enum: ['yes', 'none', 'selfhost'],
           description:
-            "Whether a visitor to production will notice this once it ships, set as the release-note label pair; it decides whether the ticket's Impact line reaches the release notes. yes: they can do something new, see changed behaviour or copy, stop hitting a bug they could hit, or lose something they used. none: CI, tests, specs, gates, hooks, agent tooling, ticket bookkeeping, refactors, monitoring, team docs, staff-only tools, or a fix for something that never reached production. A flag-gated feature is yes: the note checks the flag when it is drafted.",
+            "Whether a visitor to production will notice this once it ships, set as the release-note labels; it decides whether the ticket's Release note line reaches the release notes. selfhost: only people running their own copy notice it. yes: they can do something new, see changed behaviour or copy, stop hitting a bug they could hit, or lose something they used. none: CI, tests, specs, gates, hooks, agent tooling, ticket bookkeeping, refactors, monitoring, team docs, staff-only tools, or a fix for something that never reached production. A flag-gated feature is yes: the note checks the flag when it is drafted.",
         },
         cycle: {
           type: ['integer', 'string', 'null'],
@@ -635,9 +635,9 @@ export const strictToolDefinitions: MCPToolDefinition[] = [
         },
         release_note: {
           type: 'string',
-          enum: ['yes', 'none'],
+          enum: ['yes', 'none', 'selfhost'],
           description:
-            "Whether a visitor to production will notice this once it ships; it decides whether the ticket's Impact line reaches the release notes. yes: they can do something new, see changed behaviour or copy, stop hitting a bug they could hit, or lose something they used. none: CI, tests, specs, gates, hooks, agent tooling, ticket bookkeeping, refactors, monitoring, team docs, staff-only tools, or a fix for something that never reached production. A flag-gated feature is yes: the note checks the flag when it is drafted.",
+            "Whether a visitor to production will notice this once it ships; it decides whether the ticket's Release note line reaches the release notes. selfhost: only people running their own copy notice it. A Release note section filed with the ticket sets it too (NONE means none). yes: they can do something new, see changed behaviour or copy, stop hitting a bug they could hit, or lose something they used. none: CI, tests, specs, gates, hooks, agent tooling, ticket bookkeeping, refactors, monitoring, team docs, staff-only tools, or a fix for something that never reached production. A flag-gated feature is yes: the note checks the flag when it is drafted.",
         },
         noticed_by: {
           type: 'string',
