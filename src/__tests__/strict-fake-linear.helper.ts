@@ -85,6 +85,13 @@ export interface FakeState {
   otherComments: { issueId: string; body: string }[];
   /** Description snapshots, oldest first; the fake serves them newest first. null: the ticket has no document. */
   snapshots: { at: string; actorIds: string[]; doc: PmNode }[] | null;
+  /** State changes in the ticket's history, oldest first. */
+  stateMoves?: {
+    createdAt: string;
+    bot: boolean;
+    from: { id: string; type: string } | null;
+    to: { id: string; name: string; type: string } | null;
+  }[];
   /** Linear says it could not return the whole history. */
   historyIncomplete?: boolean;
   /** What semanticSearch returns for any query, most relevant first; 'fail' makes it throw. */
@@ -302,6 +309,21 @@ export function fakeGql(state: FakeState): Gql {
         }));
         return { issue: { comments: page(nodes, variables) } };
       }
+      case 'StrictRestoreMoves':
+        return {
+          issue: {
+            history: page(
+              (state.stateMoves ?? []).map((m) => ({
+                createdAt: m.createdAt,
+                actor: m.bot ? null : { id: 'u-person' },
+                botActor: m.bot ? { type: 'workflow' } : null,
+                fromState: m.from,
+                toState: m.to,
+              })),
+              variables,
+            ),
+          },
+        };
       case 'StrictIssue_history':
         return {
           issue: {
