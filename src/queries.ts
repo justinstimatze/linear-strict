@@ -40,6 +40,10 @@ export const HISTORY_QUERY = connectionQuery(
   'history',
   'id createdAt updatedDescription actor { id name displayName app } botActor { name }',
 );
+/** The state changes in a ticket's latest history, for telling an integration's move from a person's. */
+export const RESTORE_MOVES_QUERY = `query StrictRestoreMoves($id: String!) {
+  issue(id: $id) { history(first: 50) { nodes { createdAt actor { id } botActor { type } fromState { id type } toState { id name type } } } }
+}`;
 export const RELATIONS_QUERY = connectionQuery(
   'relations',
   'id type relatedIssue { identifier title }',

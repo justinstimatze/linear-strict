@@ -73,6 +73,7 @@ import {
   PR_LINK,
   RELATION_CREATE,
   RELATIONS_QUERY,
+  RESTORE_MOVES_QUERY,
   SEARCH_ISSUES_QUERY,
   TEAM_BY_KEY_QUERY,
   TEAM_STATES_QUERY,
@@ -157,6 +158,12 @@ import {
   type ResolvedReleaseNoteLabels,
   resolveReleaseNoteLabels,
 } from './release-note.js';
+import {
+  releaseMovedOutOf,
+  restoreRecordProblem,
+  type RestoreRule,
+  type StateMove,
+} from './restore.js';
 import { noticedByArg, routeRefusal, type RouteVerdict, type TeamRouting } from './route.js';
 
 /**
@@ -254,6 +261,12 @@ export interface StrictLinearOptions {
    * "block" refuses the move.
    */
   releaseNoteGate?: ReleaseNoteGate | undefined;
+  /**
+   * Lets set_status put a ticket back to Done, with no claim, Done when or tick checks, when the closer
+   * recorded a fresh restore for it and its history shows an integration moved it out of Done (restore.ts).
+   * Off when absent.
+   */
+  restore?: RestoreRule | undefined;
 }
 
 export interface SignOffRequest {
@@ -344,6 +357,7 @@ export class StrictLinear {
   private readonly titles: TeamTitles;
   private readonly releaseNotePair: ReleaseNoteLabels | null;
   private readonly releaseNoteGate: ReleaseNoteGate;
+  private readonly restore: RestoreRule | undefined;
   /** Each team's release-note label ids, read at most once every ten minutes. */
   private readonly releaseNoteCache = new Map<
     string,
@@ -365,6 +379,7 @@ export class StrictLinear {
     this.checks = options.checks;
     this.titles = new TeamTitles(this.gql);
     this.releaseNoteGate = options.releaseNoteGate ?? 'warn';
+    this.restore = options.restore;
     this.releaseNotePair =
       options.releaseNoteLabels === undefined
         ? { yes: 'release-note', none: 'release-note-none', selfhost: 'release-note-selfhost' }
@@ -1924,8 +1939,10 @@ export class StrictLinear {
         : null;
     }
 
+    // A restore claims nothing new, so the Done gate has nothing to check it against.
+    const restoring = target.type === 'completed' && (await this.isRestore(issue, target.id));
     const { unchecked, branchUnchecked } =
-      target.type === 'completed'
+      target.type === 'completed' && !restoring
         ? await this.checkDoneGate(
             issue,
             target.name,
@@ -1963,6 +1980,26 @@ export class StrictLinear {
           }
         : {}),
     };
+  }
+
+  /**
+   * Whether this move to a completed state undoes an integration's move out of it: the closer's
+   * fresh record says restore, the ticket sits in a state that is not completed, and its latest state
+   * change is a workflow bot's move out of the very state being written. Any doubt returns false, and
+   * the Done gate runs as it always does.
+   */
+  private async isRestore(issue: IssueCore, targetId: string): Promise<boolean> {
+    if (!this.restore || issue.state?.type === 'completed') return false;
+    if (restoreRecordProblem(this.restore, issue.identifier, this.now())) return false;
+    try {
+      const data = await this.gql<{ issue: { history: { nodes: StateMove[] } } | null }>(
+        RESTORE_MOVES_QUERY,
+        { id: issue.id },
+      );
+      return releaseMovedOutOf(data.issue?.history.nodes ?? [])?.id === targetId;
+    } catch {
+      return false;
+    }
   }
 
   /**
