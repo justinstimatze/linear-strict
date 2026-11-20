@@ -110,6 +110,88 @@ describe('set_status honours a closer restore', () => {
   });
 });
 
+describe('each refusal condition of a restore is held by its own test', () => {
+  const stuck = async (strict: StrictLinear, state: FakeState) => {
+    await expect(strict.setStatus('ENG-1', 'Done')).rejects.toThrow(/no Done when section/);
+    expect(state.issue.stateId).not.toBe('s-done');
+  };
+  const move = (over: Partial<NonNullable<FakeState['stateMoves']>[number]>) => [
+    { createdAt: '2026-11-19T20:00:00Z', bot: true, from: DONE, to: VERIFY, ...over },
+  ];
+
+  it('refuses a move back to a state other than the one the ticket left', async () => {
+    const { state, strict } = setup(record(), {
+      stateMoves: move({ from: { id: 's-merged', type: 'completed' } }),
+    });
+    await stuck(strict, state);
+  });
+
+  it('refuses when the integration moved it somewhere other than Verify', async () => {
+    const { state, strict } = setup(record(), {
+      stateMoves: move({ to: { id: 's-todo', name: 'Todo', type: 'unstarted' } }),
+    });
+    await stuck(strict, state);
+  });
+
+  it('refuses when the move was out of a state that is not completed', async () => {
+    const { state, strict } = setup(record(), {
+      stateMoves: move({ from: { id: 's-done', type: 'started' } }),
+    });
+    await stuck(strict, state);
+  });
+
+  it('refuses when the ticket is already in a completed state', async () => {
+    const { state, strict } = setup(record());
+    state.issue.stateId = 's-done';
+    await expect(strict.setStatus('ENG-1', 'Done')).rejects.toThrow(/no Done when section/);
+    expect(state.updates).toEqual([]);
+  });
+
+  it('refuses when the latest move was by a bot that is not a workflow', async () => {
+    const { state, strict } = setup(record(), { stateMoves: move({ botType: 'integration' }) });
+    await stuck(strict, state);
+  });
+
+  it('refuses a record made with a served-build override', async () => {
+    const text = JSON.stringify({
+      ...JSON.parse(record()),
+      served: { via: 'override --served-sha' },
+    });
+    const { state, strict } = setup(text);
+    await stuck(strict, state);
+  });
+
+  it('refuses when the history read throws', async () => {
+    const { state, rule } = setup(record());
+    const gql = fakeGql(state);
+    const failing = new StrictLinear({
+      gql: (query, variables) => {
+        if (query.includes('StrictRestoreMoves')) throw new Error('Linear returned 503');
+        return gql(query, variables);
+      },
+      claims: memoryClaimStore(),
+      now: () => NOW,
+      restore: rule,
+    });
+    await stuck(failing, state);
+  });
+
+  it('refuses a record dated in the future', async () => {
+    const { state, strict } = setup(record({}, '2026-11-20T13:00:00Z'));
+    await stuck(strict, state);
+  });
+
+  it('refuses a record that is not JSON', async () => {
+    const { state, strict } = setup('{not json');
+    await stuck(strict, state);
+  });
+
+  it('refuses a record with no usable time', async () => {
+    const { state, strict } = setup(JSON.stringify({ ticket: JSON.parse(record()).ticket }));
+    await stuck(strict, state);
+  });
+});
+
 describe('restoreRecordProblem', () => {
   const rule = (text: string | undefined): RestoreRule => ({
     reason: REASON,

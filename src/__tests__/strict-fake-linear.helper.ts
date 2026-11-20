@@ -89,6 +89,8 @@ export interface FakeState {
   stateMoves?: {
     createdAt: string;
     bot: boolean;
+    /** The bot's type when bot is true; workflow when absent. */
+    botType?: string;
     from: { id: string; type: string } | null;
     to: { id: string; name: string; type: string } | null;
   }[];
@@ -316,7 +318,7 @@ export function fakeGql(state: FakeState): Gql {
               (state.stateMoves ?? []).map((m) => ({
                 createdAt: m.createdAt,
                 actor: m.bot ? null : { id: 'u-person' },
-                botActor: m.bot ? { type: 'workflow' } : null,
+                botActor: m.bot ? { type: m.botType ?? 'workflow' } : null,
                 fromState: m.from,
                 toState: m.to,
               })),
