@@ -187,7 +187,9 @@ describe('each refusal condition of a restore is held by its own test', () => {
   });
 
   it('refuses a record with no usable time', async () => {
-    const { state, strict } = setup(JSON.stringify({ ticket: JSON.parse(record()).ticket }));
+    const { state, strict } = setup(
+      JSON.stringify({ ticket: { id: 'ENG-1', verdict: 'close', evidence: [REASON] } }),
+    );
     await stuck(strict, state);
   });
 });
