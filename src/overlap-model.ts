@@ -5,7 +5,9 @@
  * cache only pays when that prompt is byte for byte the one before, and the
  * open tickets change between most filings, so the list is frozen at the
  * top of each hour (see TeamTitles.frozenList) and what changed since rides
- * in the uncached message.
+ * in the uncached message. The cache uses the default 5-minute lifetime: in one
+ * week of usage.jsonl, 82 of 112 gaps between overlap calls were under five
+ * minutes, and a 1-hour write costs 2x input against 1.25x for 5 minutes.
  * Of 88 pairs of tickets agents
  * had linked as related, a second model reading both in full found 46
  * really related, and this named the earlier ticket in 38 of those. Linear's
@@ -83,7 +85,7 @@ export function overlapReader(options: {
           {
             type: 'text',
             text: OVERLAP_SYSTEM + list,
-            cache_control: { type: 'ephemeral', ttl: '1h' },
+            cache_control: { type: 'ephemeral' },
           },
         ],
         messages: [{ role: 'user', content: ticket }],
