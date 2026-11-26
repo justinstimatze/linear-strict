@@ -546,7 +546,7 @@ describe('create_issue with a model reading the open titles', () => {
     expect(sent[0]).toMatchObject({
       model: 'claude-sonnet-5-5',
       output_config: { format: { type: 'json_schema' } },
-      system: [{ cache_control: { type: 'ephemeral', ttl: '1h' } }],
+      system: [{ cache_control: { type: 'ephemeral' } }],
       messages: [{ role: 'user', content: 'Title: y' }],
     });
     const failing = overlapReader({

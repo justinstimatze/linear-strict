@@ -49,7 +49,9 @@ export const CHECKS_PATCHABLE_SECTIONS: readonly SectionName[] = [
 
 /**
  * Not a section: the one "Impact: ..." line at the top of the description, saying in plain
- * language who notices this work. It is a field a patch can set, alongside the sections.
+ * language who notices this work: what a person using the product sees or causes, or what
+ * production evidence shows, so a walk or a query can check it. It is a field a patch can set,
+ * alongside the sections.
  */
 export const IMPACT = 'Impact';
 const IMPACT_LINE = /^[ \t]*(?:\u{1F916}[ \t]*)*impact[ \t]*:/iu;
